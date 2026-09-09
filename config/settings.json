@@ -1,0 +1,18 @@
+{
+  "symbols": ["BTCUSDT", "ETHUSDT"],
+  "timeframes": ["1w", "1d", "4h", "15m", "5m", "1m"],
+  "bootstrap_bars": {"1w": 350, "1d": 800, "4h": 1000, "15m": 1000, "5m": 2100, "1m": 1000},
+  "trade_bucket": {"BTCUSDT": 5.0, "ETHUSDT": 0.5},
+  "model": "gpt-5.5",
+  "reasoning_effort": "medium",
+  "ai_timeout_seconds": 240,
+  "auto_calls_per_day": 48,
+  "manual_calls_per_day": 12,
+  "auto_min_seconds": 900,
+  "quiet_review_seconds": 7200,
+  "alert_cooldown_seconds": 1800,
+  "min_alert_confidence": 65,
+  "paper_review_days": 7,
+  "retention_days": 45,
+  "listen_port": 8791
+}
