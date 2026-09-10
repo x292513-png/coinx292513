@@ -1,0 +1,28 @@
+[Unit]
+Description=Isolated historical Binance pattern research (no AI calls)
+After=network-online.target trading-wave-monitor.service
+Wants=network-online.target
+
+[Service]
+User=tradewave
+Group=tradewave
+WorkingDirectory=/opt/trading-wave-monitor
+Environment=WAVE_ROOT=/opt/trading-wave-monitor
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/trading-wave-monitor/.venv/bin/python -m wave_monitor.learning
+Restart=on-failure
+RestartSec=30
+UMask=0007
+Nice=19
+CPUQuota=20%
+MemoryMax=384M
+TasksMax=64
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/trading-wave-monitor/data
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

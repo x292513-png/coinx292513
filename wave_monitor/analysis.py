@@ -28,7 +28,7 @@ def indicators(rows, period=14):
     return rsi,atr
 
 
-def pivots(rows, multiplier=1.5):
+def pivots(rows, multiplier=1.5, limit=30):
     """ATR reversal ZigZag; candidate extreme distinguished from confirmed points.
 
     Confirmation uses a later candle CLOSE to avoid inventing intrabar high/low order.
@@ -61,7 +61,7 @@ def pivots(rows, multiplier=1.5):
                 out.append(point(lo,'L',True,rows[i]['close_t']));direction=1;hi=i
     if direction:
         out.append(point(hi if direction==1 else lo,'H' if direction==1 else 'L',False,None))
-    return out[-30:]
+    return out[-limit:] if limit else out
 
 
 def candidates(points):

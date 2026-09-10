@@ -34,7 +34,7 @@ SCHEMA=obj({
     'confirmation_price':{'type':['number','null']},'confirmation_rule':S,
     'targets':ARRAY(N),'rsi_comment':S,'volume_comment':S,'ict_comment':S,'ict_watch_ids':ARRAY(S),
     'wave_labels':ARRAY(obj({'pivot_id':S,'label':S})),
-    'answer_to_user':S,'next_watch':S
+    'answer_to_user':S,'next_watch':S,'learning_comment':S
 })
 
 PROMPT='''당신은 사용자의 바이낸스 USDT 무기한 선물 차트 분석 파트너다. 주봉→일봉→4시간→15분→5분 순서로 탑다운 판단한다. 사용자는 상위 상승 임펄스에서 작은 봉 조정 후 롱을 주로 찾고, 1분봉은 진입 직전만 본다. 불필요한 지표를 추가하지 말고 엘리엇 12345/ABC, 매물대, RSI 다이버전스를 중심으로 분석한다.
@@ -53,6 +53,9 @@ PROMPT='''당신은 사용자의 바이낸스 USDT 무기한 선물 차트 분�
 10. 입력 밖의 현재 시황/뉴스를 가정하지 않는다. 첨부 차트는 종가 캔들만, price는 별도의 실시간 체결가격. 거래소 차트 자동 링크는 프로그램이 붙인다.
 11. ICT FVG·CE(갭의 중앙선 50%)와 OB를 엘리엇/매물대와 함께 필수로 분석한다. 하락 FVG 중앙선 재방문 후 재하락, 상승 FVG 중앙선 지지 후 재상승을 모두 비교. OB는 프로그램의 강한 이탈+FVG+근접 구조 돌파 조건으로 만든 후보이며 기관 주문이 있다는 사실로 단정하지 않는다. OB 전체 꼬리 범위와 몸통 중앙값(MT)을 구분. FVG의 CE와 OB 몸통 중앙값은 다르다.
 12. ict_comment에는 가장 가까운 유효 FVG 구간/CE, OB 범위, 상위 방향·매물대와 겹치는지, 이미 중앙선을 터치/전부 메움/종가로 무효화됐는지 적는다. 메워지거나 무효화된 FVG를 신선한 진입구간으로 재사용하지 않는다. ict_watch_ids는 실제 입력 active zone id에서 선택하며 최대 6개. zones도 이런 겹침을 고려해 선정하고, ICT와 파동이 충돌하면 충돌 이유와 우선하는 관점을 명확히 말한다. ICT 용어(FVG, CE, OB)는 써도 되지만 내부 id는 사용자 설명에 쓰지 않는다.
+13. historical_learning은 실제 과거 캔들과 발표한 분석의 사후 관측 기록이다. learning_comment에 최근 90일과 이전 기간의 차이, 현재와 비슷한 비중첩 사례 수/시점/이후 움직임 중 유의미한 것 1~2개를 짧게 설명하고 현재 관점에 어떻게 반영했는지 적는다. 숫자는 입력에 있는 그대로만 사용하고 표본 20건 미만은 적다고 표시한다. 유사사례 상승 비율을 현재의 상승 확률/승률로 쓰지 않는다. 현물과 선물은 같은 시장 움직임이 중복되므로 표본을 합산하지 않는다. 월봉의 큰 방향도 historical_learning의 monthly_context로 확인한다. 오래된 분석 기억이 현재의 명확한 가격 무효화를 덮어쓰면 안 된다.
+14. 삼각형 E가 A-C 투영선에 정확히 닿을 의무는 없다. 선 도달 전 반전과 선을 살짝 넘은 뒤 복귀를 함께 고려한다. early_reversal은 규칙으로 측정한 가격 반응일 뿐 선매수/시장조작 같은 참가자 의도는 확인된 사실이 아니다. FVG CE 미도달 추세 연장 통계 역시 '반드시 중앙선까지 온다'는 가정을 점검하는 근거다. 학습자료가 stale/not_ready면 그 상태를 솔직하게 적고 통계를 만들지 않는다.
+15. 텔레그램 가독성: headline 55자 내외, thesis 200자 내외, 각 frame evidence 100자 내외, zone reason 80자 내외. confirmation_rule은 120자 내외로 핵심 가격/봉 마감 조건. ict_comment/learning_comment는 각각 250자 내외. 나머지도 한두 문장으로 쓰고 중복 표현은 줄인다.
 출력은 지정 JSON schema만.
 '''
 
@@ -142,18 +145,8 @@ def run_codex(prompt,chart,job_id,anchors,ict_ids):
 
 
 def format_message(result,snap,analysis_id,reason):
-    from datetime import datetime,timezone,timedelta
-    stamp=datetime.fromtimestamp(snap['asof'],timezone(timedelta(hours=9))).strftime('%m/%d %H:%M KST')
-    lines=[f"{result['symbol']} · {result['headline']}",f"분석 #{analysis_id} · {stamp} · 기준 {snap['price']['price']:,.2f}",f"분석 확신도 {result['confidence']}/100",'',result['thesis'],'']
-    for f in result['frames']:
-        if f['tf']=='1m' and f['status']=='standby':continue
-        lines.append(f"{f['tf']}: {f['count']} — {f['evidence']}")
-    lines+=['','관심 가격대']+[f"• {z['low']:,.2f}–{z['high']:,.2f}: {z['reason']}" for z in result['zones']]
-    lines+=['',f"다음 확인: {result['confirmation_rule']}",f"무효화: {result['invalidation_price']:,.2f} {'하회' if result['invalidation_side']=='below' else '상회'}" if result['invalidation_price'] else '무효화: 방향성 시나리오 보류', '목표 후보: '+', '.join(f'{t:,.2f}' for t in result['targets']) if result['targets'] else '목표 후보: 아직 지정하지 않음',f"RSI: {result['rsi_comment']}",f"매물대: {result['volume_comment']}",f"대안: {result['alternative']}",f"변화: {result['changed_since_previous']}",f"관찰: {result['next_watch']}"]
-    lines+=['',f"ICT · FVG/OB: {result.get('ict_comment','다음 분석에서 업데이트')}",'무효화는 실시간 체결가격 기준입니다.']
-    if result['answer_to_user']:lines+=['',result['answer_to_user']]
-    lines+=['',f"https://www.binance.com/en/futures/{result['symbol']}",f"https://www.tradingview.com/chart/?symbol=BINANCE%3A{result['symbol']}.P"]
-    return '\n'.join(lines)
+    from .presentation import format_analysis
+    return format_analysis(result,snap,analysis_id,reason)
 
 
 def worth_alert(result,previous,reason,symbol):
@@ -186,6 +179,11 @@ def process(job):
             ref=c.execute('SELECT created,symbol,result FROM analyses WHERE id=?',(job['analysis_ref'],)).fetchone()
         if ref:snap['reply_reference']={'created':ref['created'],'symbol':ref['symbol'],'result':json.loads(ref['result'])}
     previous=store.latest(job['symbol'])
+    from .learning import context
+    try:snap['historical_learning']=context(job['symbol'],raw,snap['asof'])
+    except Exception as e:
+        log.warning('learning_context_unavailable %s',type(e).__name__)
+        snap['historical_learning']={'status':'unavailable'}
     charts=store.ROOT/'data/charts';charts.mkdir(exist_ok=True)
     chart=charts/f"{job['symbol']}-{job['id']}.png"
     render(snap,raw,chart)
