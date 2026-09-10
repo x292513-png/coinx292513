@@ -44,6 +44,14 @@ class InboxTests(unittest.IsolatedAsyncioTestCase):
             r=await self.client.post('/inbox',json=dict(user_id=10,chat_id=-100,topic_id=50,message_id=mid,text=text),headers={'X-Wave-Key':'test-secret'})
             self.assertEqual(r.status,200);self.assertEqual(store.get('paused'),state)
 
+    async def test_fractal_command_does_not_call_ai(self):
+        payload=dict(user_id=10,chat_id=-100,topic_id=50,message_id=30,text='/fractal')
+        r=await self.client.post('/inbox',json=payload,headers={'X-Wave-Key':'test-secret'})
+        self.assertEqual(r.status,200)
+        with store.db() as c:
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM jobs').fetchone()[0],0)
+            self.assertIn('프랙탈',c.execute('SELECT text FROM outbox').fetchone()[0])
+
 
 class BridgeTests(unittest.IsolatedAsyncioTestCase):
     async def test_unrelated_topic_keeps_original_handler(self):

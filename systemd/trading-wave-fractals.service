@@ -1,0 +1,29 @@
+[Unit]
+Description=Cross-timeframe fractal index and persistent knowledge
+After=network-online.target trading-wave-monitor.service
+Wants=network-online.target
+
+[Service]
+User=tradewave
+Group=tradewave
+WorkingDirectory=/opt/trading-wave-monitor
+Environment=WAVE_ROOT=/opt/trading-wave-monitor
+Environment=PYTHONUNBUFFERED=1
+Environment=OPENBLAS_NUM_THREADS=1
+ExecStart=/opt/trading-wave-monitor/.venv/bin/python -m wave_monitor.fractals
+Restart=on-failure
+RestartSec=30
+UMask=0007
+Nice=19
+CPUQuota=25%
+MemoryMax=512M
+TasksMax=64
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/trading-wave-monitor/data
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

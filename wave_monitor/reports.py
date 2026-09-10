@@ -73,6 +73,8 @@ def status_text():
     lines += [f"오늘 AI: 자동 {counts.get('auto',0)}/{cfg['auto_calls_per_day']} · 질문 {counts.get('manual',0)}/{cfg['manual_calls_per_day']}",f"분석 대기/진행 {pending}건",'', '사용법: BTC 분석 / ETH 분석 / 알림에 답장하여 질문', '/status 상태 · /report 검증 · /pause 중지 · /resume 재개']
     updated=store.get('learning_updated_at')
     lines.extend(['',f"과거 사례 갱신: {((now-updated)/3600):.1f}시간 전" if updated else '과거 사례: 첫 수집 준비 중','/learn 과거 패턴 비교 · 과거 수집과 통계 계산은 AI 호출 없음'])
+    fractal=store.get('fractal_updated_at')
+    lines.extend([f"교차 시간봉 프랙탈 갱신: {(now-fractal)/3600:.1f}시간 전" if fractal else '교차 시간봉 프랙탈: 첫 자료 준비 중','/fractal 반복 패턴 지식'])
     return '\n'.join(lines)
 
 

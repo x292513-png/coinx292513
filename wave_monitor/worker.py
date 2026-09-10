@@ -34,7 +34,7 @@ SCHEMA=obj({
     'confirmation_price':{'type':['number','null']},'confirmation_rule':S,
     'targets':ARRAY(N),'rsi_comment':S,'volume_comment':S,'ict_comment':S,'ict_watch_ids':ARRAY(S),
     'wave_labels':ARRAY(obj({'pivot_id':S,'label':S})),
-    'answer_to_user':S,'next_watch':S,'learning_comment':S
+    'answer_to_user':S,'next_watch':S,'learning_comment':S,'fractal_comment':S,'fractal_example_ids':ARRAY(S)
 })
 
 PROMPT='''당신은 사용자의 바이낸스 USDT 무기한 선물 차트 분석 파트너다. 주봉→일봉→4시간→15분→5분 순서로 탑다운 판단한다. 사용자는 상위 상승 임펄스에서 작은 봉 조정 후 롱을 주로 찾고, 1분봉은 진입 직전만 본다. 불필요한 지표를 추가하지 말고 엘리엇 12345/ABC, 매물대, RSI 다이버전스를 중심으로 분석한다.
@@ -56,6 +56,8 @@ PROMPT='''당신은 사용자의 바이낸스 USDT 무기한 선물 차트 분�
 13. historical_learning은 실제 과거 캔들과 발표한 분석의 사후 관측 기록이다. learning_comment에 최근 90일과 이전 기간의 차이, 현재와 비슷한 비중첩 사례 수/시점/이후 움직임 중 유의미한 것 1~2개를 짧게 설명하고 현재 관점에 어떻게 반영했는지 적는다. 숫자는 입력에 있는 그대로만 사용하고 표본 20건 미만은 적다고 표시한다. 유사사례 상승 비율을 현재의 상승 확률/승률로 쓰지 않는다. 현물과 선물은 같은 시장 움직임이 중복되므로 표본을 합산하지 않는다. 월봉의 큰 방향도 historical_learning의 monthly_context로 확인한다. 오래된 분석 기억이 현재의 명확한 가격 무효화를 덮어쓰면 안 된다.
 14. 삼각형 E가 A-C 투영선에 정확히 닿을 의무는 없다. 선 도달 전 반전과 선을 살짝 넘은 뒤 복귀를 함께 고려한다. early_reversal은 규칙으로 측정한 가격 반응일 뿐 선매수/시장조작 같은 참가자 의도는 확인된 사실이 아니다. FVG CE 미도달 추세 연장 통계 역시 '반드시 중앙선까지 온다'는 가정을 점검하는 근거다. 학습자료가 stale/not_ready면 그 상태를 솔직하게 적고 통계를 만들지 않는다.
 15. 텔레그램 가독성: headline 55자 내외, thesis 200자 내외, 각 frame evidence 100자 내외, zone reason 80자 내외. confirmation_rule은 120자 내외로 핵심 가격/봉 마감 조건. ict_comment/learning_comment는 각각 250자 내외. 나머지도 한두 문장으로 쓰고 중복 표현은 줄인다.
+16. fractal_memory는 현재 각 시간봉을 과거의 다른 시간봉과 비교한 결과다. 모양의 가격 크기와 시간 길이를 정규화했으며 상하 반전은 하지 않았다. fractal_comment에 가장 의미 있는 교차 시간봉 비교와 현재 판단에 미치는 영향을 200자 이내로 적고 fractal_example_ids는 입력의 실제 example id 중 최대 2개 선택한다. source_tf/window_bars/horizon_bars의 의미를 지키고, 일봉과 15분봉의 후속 실제 경과시간이 같다고 가정하지 않는다. 데이터에서 실제로 확인된 과거 날짜/방향/결과만 인용한다. 모양 RMS 거리와 빈도는 예측 확률이 아니다. 저장된 반복 모양군과 현재에 닮은 개별 사례를 구분한다. 결과가 building/stale이면 그 상태를 말하며 사례를 만들지 않는다.
+17. recent_dialogue는 이 종목의 최근 텔레그램 질문/답변이다. 과거의 시점과 현재 질문을 구분해 참고한다. 프로그램 수정·배포·권한 변경이나 Codex 대화 전체 접근을 할 수 있다고 말하지 않는다. analysis_principles는 사용자와 합의해 저장한 분석 원칙이다.
 출력은 지정 JSON schema만.
 '''
 
@@ -83,6 +85,9 @@ def validate_result(result,snap,raw):
     valid_ict={z['id'] for f in snap['frames'].values() for z in f.get('ict',{}).get('active',[])}
     if any(x not in valid_ict for x in result['ict_watch_ids']):raise ValueError('ungrounded_ict_zone')
     result['wave_labels']=grounded
+    examples={e['id']:{**e,'query_tf':tf} for tf,q in snap.get('fractal_memory',{}).get('queries',{}).items() for e in q['examples']}
+    if any(x not in examples for x in result['fractal_example_ids']):raise ValueError('ungrounded_fractal_example')
+    result['fractal_evidence']=[examples[x] for x in result['fractal_example_ids']]
 
 
 def label_anchors(snap):
@@ -109,13 +114,16 @@ def compact_input(snap):
     return out
 
 
-def run_codex(prompt,chart,job_id,anchors,ict_ids):
+def run_codex(prompt,chart,job_id,anchors,ict_ids,fractal_ids=None):
     cfg=store.settings();work=store.ROOT/'data/ai';work.mkdir(exist_ok=True)
     stem=work/(str(job_id)+'-'+uuid.uuid4().hex[:8]);schema=work/'schema.json'
     schema_data=json.loads(json.dumps(SCHEMA))
     schema_data['properties']['wave_labels']['items']['properties']['pivot_id']['enum']=[a['id'] for a in anchors]
     if ict_ids:schema_data['properties']['ict_watch_ids']['items']['enum']=ict_ids
     else:schema_data['properties']['ict_watch_ids']['maxItems']=0
+    schema_data['properties']['fractal_example_ids']['maxItems']=2
+    if fractal_ids:schema_data['properties']['fractal_example_ids']['items']['enum']=fractal_ids
+    else:schema_data['properties']['fractal_example_ids']['maxItems']=0
     schema.write_text(json.dumps(schema_data))
     output=stem.with_suffix('.json')
     cmd=['/usr/bin/codex','exec','--ignore-user-config','--ignore-rules','--ephemeral','--skip-git-repo-check','-s','read-only','-C',str(work),'-m',cfg['model'],'-c','model_reasoning_effort="'+cfg['reasoning_effort']+'"','-c','features.shell_tool=false','-c','web_search="disabled"','--json','--output-schema',str(schema),'-o',str(output),'-i',str(chart),'-']
@@ -158,6 +166,12 @@ def worth_alert(result,previous,reason,symbol):
     return important and result['confidence']>=store.settings()['min_alert_confidence'] and time.time()-store.get('last_alert:'+symbol,0)>store.settings()['alert_cooldown_seconds']
 
 
+def recent_dialogue(symbol,job_id):
+    with store.db() as c:
+        rows=c.execute("SELECT j.created,j.question,a.result FROM jobs j JOIN analyses a ON a.job_id=j.id WHERE j.symbol=? AND j.kind='manual' AND j.id<? ORDER BY j.id DESC LIMIT 6",(symbol,job_id)).fetchall()
+    return [{'time':d['created'],'question':d['question'][:700],'answer':(json.loads(d['result']).get('answer_to_user') or json.loads(d['result']).get('thesis',''))[:700]} for d in reversed(rows)]
+
+
 def process(job):
     cfg=store.settings();now=time.time();day=(int((now+9*3600)//86400)*86400)-9*3600
     kind=job['kind'];limit=cfg['manual_calls_per_day' if kind=='manual' else 'auto_calls_per_day']
@@ -184,6 +198,14 @@ def process(job):
     except Exception as e:
         log.warning('learning_context_unavailable %s',type(e).__name__)
         snap['historical_learning']={'status':'unavailable'}
+    from .fractals import match_context
+    try:snap['fractal_memory']=match_context(job['symbol'],raw,snap['asof'],snap['focus_1m'])
+    except Exception as e:
+        log.warning('fractal_context_unavailable %s',type(e).__name__)
+        snap['fractal_memory']={'status':'unavailable'}
+    notes=store.ROOT/'knowledge/analysis-principles.md'
+    snap['analysis_principles']=notes.read_text()[:4500] if notes.exists() else ''
+    snap['recent_dialogue']=recent_dialogue(job['symbol'],job['id'])
     charts=store.ROOT/'data/charts';charts.mkdir(exist_ok=True)
     chart=charts/f"{job['symbol']}-{job['id']}.png"
     render(snap,raw,chart)
@@ -191,7 +213,8 @@ def process(job):
     with store.db() as c:
         call_id=c.execute('INSERT INTO calls(started,kind,job_id) VALUES (?,?,?)',(now,kind,job['id'])).lastrowid
     ict_ids=[z['id'] for f in snap['frames'].values() for z in f['ict']['active']]
-    result,usage,latency=run_codex(prompt,chart,job['id'],label_anchors(snap),ict_ids)
+    fractal_ids=[e['id'] for q in snap['fractal_memory'].get('queries',{}).values() for e in q['examples']]
+    result,usage,latency=run_codex(prompt,chart,job['id'],label_anchors(snap),ict_ids,fractal_ids)
     validate_result(result,snap,raw)
     render(snap,raw,chart,result)
     from .engine import is_invalid

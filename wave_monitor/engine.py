@@ -245,6 +245,9 @@ async def inbox(request):
     elif text.strip() in ['/learn','학습 기록','과거 패턴']:
         from .learning import report_text
         store.enqueue_message(report_text(),reply_id=mid)
+    elif text.strip() in ['/fractal','프랙탈 기록','프랙탈 지식']:
+        from .fractals import report_text
+        store.enqueue_message(report_text(),reply_id=mid)
     else:
         ref=None
         if reply:
