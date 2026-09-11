@@ -207,7 +207,7 @@ async def outbox():
             row=c.execute("SELECT * FROM outbox WHERE status='pending' AND attempts<5 ORDER BY id LIMIT 1").fetchone()
         if row:
             try:
-                ids=await telegram.send(row['text'],row['chart'],row['reply_id'])
+                ids=await telegram.send(row['text'],row['chart'],row['reply_id'],row['analysis_id'])
                 with store.db() as c:
                     for msgid in ids:c.execute('INSERT OR REPLACE INTO messages VALUES (?,?,?,?)',(msgid,row['analysis_id'],time.time(),'outgoing'))
                     c.execute("UPDATE outbox SET status='sent' WHERE id=?",(row['id'],))

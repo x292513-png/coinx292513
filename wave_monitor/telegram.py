@@ -21,14 +21,24 @@ async def call(method, payload, file=None):
     return body['result']
 
 
-async def send(text, chart=None, reply_id=None):
+async def send(text, chart=None, reply_id=None, analysis_id=None):
     from .presentation import pages
     r=store.runtime();base={'chat_id':r['chat_id'],'message_thread_id':r['topic_id']}
     if reply_id:
         base['reply_parameters']={'message_id':reply_id,'allow_sending_without_reply':True}
+    from .message_links import PATTERN,ensure,linkify,remember
+    document=pages(text)
+    own=analysis_id if chart else None
+    refs={int(m[1]) for page in document for m in PATTERN.finditer(page)}
+    urls={}
+    for aid in sorted(refs-{own}):
+        url=await ensure(aid,call)
+        if url:urls[aid]=url
     msgs=[]
-    for index,page in enumerate(pages(text)):
+    for index,page in enumerate(document):
+        page=linkify(page,urls)
         msg=await call('sendMessage',{**base,'text':page,'parse_mode':'HTML','disable_notification':index>0,'link_preview_options':{'is_disabled':True}});msgs.append(msg['message_id'])
+        if index==0 and own:remember(own,msg['message_id'])
         store.put('telegram_format_verified',{'message_id':msg['message_id'],'entities':sorted({x['type'] for x in msg.get('entities',[])})})
     if chart:
         # Telegram photo dimensions must sum <= 10000; chart renderer fits comfortably.

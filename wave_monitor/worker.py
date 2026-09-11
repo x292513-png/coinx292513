@@ -173,14 +173,15 @@ def recent_dialogue(symbol,job_id):
 
 
 def process(job):
-    cfg=store.settings();now=time.time();day=(int((now+9*3600)//86400)*86400)-9*3600
+    from .budget import day_start,notice
+    cfg=store.settings();now=time.time();day=day_start(now)
     kind=job['kind'];limit=cfg['manual_calls_per_day' if kind=='manual' else 'auto_calls_per_day']
     with store.db() as c:
         calls=c.execute('SELECT COUNT(*) FROM calls WHERE kind=? AND started>=?',(kind,day)).fetchone()[0]
     if calls>=limit:
         key='budget_notice:'+kind+':'+str(day)
         if not store.get(key):
-            store.enqueue_message(f"오늘 {kind} AI 분석 {limit}회 상한에 도달했어요. 가격·매물대·구조 감시와 기존 시나리오 무효화 알림은 계속됩니다. /status 로 상태를 확인할 수 있어요.",reply_id=job['reply_id']);store.put(key,True)
+            store.enqueue_message(notice(kind,calls,limit,now),reply_id=job['reply_id']);store.put(key,True)
         return 'budget_limited'
     snap,raw=snapshot(job['symbol'])
     if time.time()-snap['price']['time']>30:raise RuntimeError('stale_price')
