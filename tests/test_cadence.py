@@ -54,3 +54,11 @@ class CadenceTests(unittest.TestCase):
   with patch.object(store,'latest',return_value=a),patch('wave_monitor.message_links.existing',return_value=None):
    text=cadence.briefing(now)
   self.assertIn('무효화됨',text);self.assertNotIn('OLD ENTRY',text);self.assertNotIn('BUY OLD LEVEL',text)
+ def test_current_conviction_evidence_and_invalidation_visible(self):
+  now=10000;store.put('price:BTCUSDT',{'price':110,'time':now})
+  a={'id':8,'created':9990,'result':{'headline':'상승 우선','thesis':'나는 상승 재개를 강하게 본다','fractal_comment':'확인된 과거 사례','fractal_evidence':[{'id':'real'}],'invalidation_price':105,'invalidation_side':'below'}}
+  with patch.object(store,'latest',return_value=a),patch('wave_monitor.message_links.existing',return_value=None):text=cadence.briefing(now)
+  self.assertIn('나는 상승 재개를 강하게 본다',text);self.assertIn('확인된 과거 사례',text);self.assertIn('105.00 하회',text)
+  a['result']['fractal_evidence']=[]
+  with patch.object(store,'latest',return_value=a),patch('wave_monitor.message_links.existing',return_value=None):text=cadence.briefing(now)
+  self.assertNotIn('확인된 과거 사례',text)

@@ -44,12 +44,17 @@ def briefing(now):
         if invalid or now-a['created']>7200:
             lines.append('새 AI 해석 대기 · 이전 진입 조건은 현재 신호로 사용하지 않습니다.')
             continue
-        lines.append(r.get('headline','')[:140])
+        lines.append('🧭 '+r.get('headline','')[:100])
+        if r.get('thesis'):lines.append('내 판단: '+r['thesis'][:160])
+        if r.get('fractal_comment') and r.get('fractal_evidence'):lines.append('🔁 과거 비교: '+r['fractal_comment'][:140])
         zones=r.get('zones',[])[:3]
         for z in zones:
             role={'support':'지지','resistance':'저항','watch':'관찰'}.get(z['role'],z['role'])
             lines.append(f"• {role} {z['low']:,.2f}–{z['high']:,.2f}"+(' (이전 분석)' if invalid else ''))
-        lines.append('다음 확인: '+r.get('next_watch',r.get('confirmation_rule',''))[:220])
+        lines.append('다음 확인: '+r.get('next_watch',r.get('confirmation_rule',''))[:120])
+        if r.get('invalidation_price'):
+            side='하회' if r['invalidation_side']=='below' else '상회'
+            lines.append(f"관점 철회: {r['invalidation_price']:,.2f} {side}")
     lines += ['','정기 브리핑은 매시간 1회 · 급변만 별도 알림. AI 해석 시각과 현재 가격 시각은 다를 수 있어요.']
     return '\n'.join(lines)
 
