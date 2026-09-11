@@ -47,7 +47,10 @@ def briefing(now):
         lines.append('🧭 '+r.get('headline','')[:100])
         if r.get('thesis'):lines.append('내 판단: '+r['thesis'][:160])
         if r.get('fractal_comment') and r.get('fractal_evidence'):lines.append('🔁 과거 비교: '+r['fractal_comment'][:140])
-        zones=r.get('zones',[])[:3]
+        from .trade_plan import format_plan
+        plan=format_plan(r,compact=True)
+        if plan:lines.append(plan)
+        zones=[] if plan else r.get('zones',[])[:3]
         for z in zones:
             role={'support':'지지','resistance':'저항','watch':'관찰'}.get(z['role'],z['role'])
             lines.append(f"• {role} {z['low']:,.2f}–{z['high']:,.2f}"+(' (이전 분석)' if invalid else ''))
@@ -82,4 +85,6 @@ def tick(now):
     last=store.get('hourly_brief_slot')
     if last is None:store.put('hourly_brief_slot',slot)
     elif slot>last:
-        store.enqueue_message(briefing(now));store.put('hourly_brief_slot',slot)
+        from .presentation import pack
+        from html import escape
+        store.enqueue_message(pack([escape(briefing(now))]));store.put('hourly_brief_slot',slot)

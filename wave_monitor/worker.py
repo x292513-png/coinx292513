@@ -28,6 +28,7 @@ SCHEMA=obj({
     'state':enum('trend_impulse','correction_ongoing','correction_end_candidate','entry_structure_confirmed','ending_candidate','leading_candidate','triangle_ongoing','unclear'),
     'confidence':{'type':'integer','minimum':0,'maximum':100},
     'thesis':S,'alternative':S,'changed_since_previous':S,
+    'trade_plan':obj({'enabled':{'type':'boolean'},'reason':S,**{k:{'type':['number','null']} for k in ['entry_low','entry_high','stop','tp1','tp2']},'take_pct':{'type':'integer','minimum':0,'maximum':100},'entry_rule':S,'stop_reason':S,'breakeven_rule':S,'hold_rule':S}),
     'frames':ARRAY(obj({'tf':enum('1w','1d','4h','15m','5m','1m'),'count':S,'evidence':S,'status':enum('developing','confirmed_structure','unclear','standby')})),
     'zones':ARRAY(obj({'low':N,'high':N,'role':enum('support','resistance','watch'),'reason':S})),
     'invalidation_price':{'type':['number','null']},'invalidation_side':enum('below','above','none'),
@@ -60,12 +61,18 @@ PROMPT='''당신은 사용자의 바이낸스 USDT 무기한 선물 차트 분�
 17. recent_dialogue는 이 종목의 최근 텔레그램 질문/답변이다. 과거의 시점과 현재 질문을 구분해 참고한다. 프로그램 수정·배포·권한 변경이나 Codex 대화 전체 접근을 할 수 있다고 말하지 않는다. analysis_principles는 사용자와 합의해 저장한 분석 원칙이다.
 18. 사용자는 방향성 있는 강한 의견을 원한다. headline 첫 문장에 가장 유력한 방향/시나리오 하나를 선택하고, thesis는 '나는 상승 재개 쪽을 우선한다'처럼 결론→핵심 근거→관점을 바꿀 가격 순서로 작성한다. 상승/하락 가능성을 기계적으로 동등하게 나열하지 않는다. 실제 우세가 없으면 '지금은 방향 우위가 없어 관망한다'고 단호하게 말한다. 사용자의 선호 때문에 bias나 confidence를 올리지 않는다.
 19. 과거 유사 패턴의 후속 경로와 현재 상위 추세·엘리엇 구조·FVG/OB·매물대가 같은 방향을 지지할 때 '나는 이 방향을 강하게 본다'고 강조한다. fractal_comment에 실제 비교 시점/시간봉, 입력에 존재하는 표본 수와 이후 결과, 현재 구조와의 차이 중 핵심 근거를 제시한다. 단일 유사사례나 반복 모양 빈도만으로 강한 통계 증거라고 하지 않는다. 전체 10~15년의 모든 차트를 기억/검색했다고 말하지 않고 실제 입력의 수집 범위만 설명한다. '100% 동일', '무조건', 검증하지 않은 80~90% 적중률은 만들지 않는다. 충분한 근거가 있으면 표현을 흐리지 말되, 반증 가격이 깨지면 강했던 관점도 즉시 철회한다.
+20. 사용자는 원금 손실 억제와 의미 있는 추세 수익을 함께 원하며 잦은 작은 익절을 싫어한다. trade_plan은 방향 근거가 강하고 실제 구조상 진입/손절/두 목표를 제시할 수 있을 때만 enabled=true. 그 외 false, 숫자 null/take_pct=0, reason에 대기 이유를 적는다. 예측 강도를 올려 억지로 계획을 만들지 않는다. 계획은 미체결 가정의 제안이며 사용자의 실제 포지션/주문/손익을 알고 있다고 말하지 않는다.
+21. enabled 계획: entry_low/high는 실제 지지/FVG/OB 재확인이나 돌파 확인 후 진입 범위, entry_rule은 진입 전 필요한 종가/재테스트 조건. stop은 정상적인 꼬리/변동성을 고려해 파동 구조가 무너지는 가격이며 stop_reason에 근거를 적는다. 현재 사용 가능한 시세는 체결가격 기준이며 실제 주문의 Mark/Last 트리거 기준 일치 확인을 entry_rule에 짧게 포함한다. 청산가격·레버리지·수량은 계좌 정보 없이 만들지 않는다. 손절을 넓혀 손실을 버티거나 물타기로 원금 회복하라고 하지 않는다.
+22. tp1은 의미 있는 다음 매물대/스윙에서 일부 익절, take_pct는 기본 50을 검토하되 구조에 따라 이유를 reason에 설명한다. tp2는 나머지 추세 목표. 짧은 고정 퍼센트 익절을 반복하지 않는다. 진입구간의 불리한 끝값 기준으로 1차 약 1.5R 이상, 최종 약 2R 이상의 여유를 선호하되 숫자를 맞추려고 근거 없는 목표를 늘리지 않는다. 실제 구조상 여유가 부족하면 enabled=false로 대기한다. R은 최초 손절폭이며 비용 전임을 구분한다.
+23. breakeven_rule: 단순히 조금 수익이 났다고 바로 본전 스탑으로 옮기지 말고 1차 일부 익절 후 지지/저항 전환 또는 15분/1시간 스윙 형성 확인 등 가격과 구조 조건을 명시한다. 실제 평균 체결가와 수수료·펀딩·슬리피지를 반영할 본전 기준은 계좌 정보가 없으면 정확한 가격을 꾸미지 말고 적용 조건으로 설명한다. hold_rule은 잔량을 어느 시간봉 스윙으로 추적하고 어떤 종가/구조 이탈에서 정리할지 구체적으로 쓴다. 본전 스탑으로 원금 보장이라고 표현하지 않는다. 각 rule은 85자 이내, 핵심 가격/조건을 먼저 쓴다.
 출력은 지정 JSON schema만.
 '''
 
 
 def validate_result(result,snap,raw):
     jsonschema.validate(result,SCHEMA)
+    from .trade_plan import validate as validate_plan
+    validate_plan(result['trade_plan'],result['bias'])
     if result['symbol']!=snap['symbol']:raise ValueError('wrong_symbol')
     if sorted(x['tf'] for x in result['frames'])!=sorted(raw):raise ValueError('missing_or_duplicate_timeframes')
     if not result['wave_labels']:raise ValueError('missing_wave_labels')
