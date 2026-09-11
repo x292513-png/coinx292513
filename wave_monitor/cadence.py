@@ -30,6 +30,9 @@ def briefing(now):
             lines += ['',symbol+' · 실시간 데이터 지연, 현재 판단 보류'];continue
         price=p['price'];moves=changes(symbol,price,now)
         lines += ['',f"📍 {symbol} · {price:,.2f}",' · '.join(f'{m}분 {v:+.2f}%' for m,v in moves.items()) or '변동률 기준 데이터 수집 중']
+        with store.db() as c:
+            span=c.execute("SELECT MIN(l),MAX(h),COUNT(*) FROM candles WHERE symbol=? AND tf='1m' AND t>=?",(symbol,(now-3600)*1000)).fetchone()
+        if span[2]>=58:lines.append(f'최근 1시간 범위 {span[0]:,.2f}–{span[1]:,.2f}')
         a=store.latest(symbol)
         if not a:lines.append('AI 해석 기록 대기');continue
         r=a['result'];stamp=datetime.fromtimestamp(a['created'],KST).strftime('%m/%d %H:%M')
@@ -38,6 +41,9 @@ def briefing(now):
         reference=f"분석 #{a['id']}" if existing(a['id']) else '저장된 AI 해석'
         invalid=bool(store.get('invalidated:'+str(a['id']))) or is_invalid(r,price)
         lines.append(f"{reference} · {stamp} 기준 · "+('무효화됨, 새 판단 대기' if invalid else '이전 해석 참고'))
+        if invalid or now-a['created']>7200:
+            lines.append('새 AI 해석 대기 · 이전 진입 조건은 현재 신호로 사용하지 않습니다.')
+            continue
         lines.append(r.get('headline','')[:140])
         zones=r.get('zones',[])[:3]
         for z in zones:

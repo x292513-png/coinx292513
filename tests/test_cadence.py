@@ -48,3 +48,9 @@ class CadenceTests(unittest.TestCase):
   with store.db() as c:
    self.assertEqual(c.execute('SELECT COUNT(*) FROM jobs').fetchone()[0],0)
    self.assertEqual(c.execute('SELECT COUNT(*) FROM outbox').fetchone()[0],1)
+ def test_invalid_analysis_does_not_repeat_old_entry_advice(self):
+  now=10000;store.put('price:BTCUSDT',{'price':110,'time':now})
+  a={'id':7,'created':9900,'result':{'headline':'OLD ENTRY','next_watch':'BUY OLD LEVEL','invalidation_price':105,'invalidation_side':'above'}}
+  with patch.object(store,'latest',return_value=a),patch('wave_monitor.message_links.existing',return_value=None):
+   text=cadence.briefing(now)
+  self.assertIn('무효화됨',text);self.assertNotIn('OLD ENTRY',text);self.assertNotIn('BUY OLD LEVEL',text)
