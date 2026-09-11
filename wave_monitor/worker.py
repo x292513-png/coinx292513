@@ -180,7 +180,7 @@ def process(job):
         calls=c.execute('SELECT COUNT(*) FROM calls WHERE kind=? AND started>=?',(kind,day)).fetchone()[0]
     if calls>=limit:
         key='budget_notice:'+kind+':'+str(day)
-        if not store.get(key):
+        if not store.get(key) and (kind=='manual' or cfg.get('notification_mode')!='hourly'):
             store.enqueue_message(notice(kind,calls,limit,now),reply_id=job['reply_id']);store.put(key,True)
         return 'budget_limited'
     snap,raw=snapshot(job['symbol'])
@@ -228,10 +228,11 @@ def process(job):
     with store.db() as c:
         aid=c.execute('INSERT INTO analyses(job_id,created,symbol,snapshot,result,chart,usage,latency) VALUES (?,?,?,?,?,?,?,?)',(job['id'],time.time(),job['symbol'],json.dumps(snap,ensure_ascii=False),json.dumps(result,ensure_ascii=False),str(chart),json.dumps(usage),latency)).lastrowid
         c.execute('UPDATE calls SET ok=1,usage=? WHERE id=?',(json.dumps(usage),call_id))
+    quiet_auto=job['kind']=='auto' and cfg.get('notification_mode')=='hourly'
     if outdated:
         store.put('invalidated:'+str(aid),time.time())
-        store.enqueue_message(f"{job['symbol']} 분석 #{aid}: 분석 중 가격이 바뀌어 새 진입 판단을 보류합니다. 당시 차트와 판단은 검증 기록에 저장했어요.",aid,reply_id=job['reply_id'])
-    elif worth_alert(result,previous,job['reason'],job['symbol']):
+        if not quiet_auto:store.enqueue_message(f"{job['symbol']} 분석 #{aid}: 분석 중 가격이 바뀌어 새 진입 판단을 보류합니다. 당시 차트와 판단은 검증 기록에 저장했어요.",aid,reply_id=job['reply_id'])
+    elif not quiet_auto and (job['kind']=='manual' or worth_alert(result,previous,job['reason'],job['symbol'])):
         store.enqueue_message(format_message(result,snap,aid,job['reason']),aid,str(chart),job['reply_id']);store.put('last_alert:'+job['symbol'],time.time())
     store.put('ai_failure:'+job['symbol'],None)
     log.info('analysis_saved id=%s symbol=%s latency=%.1fs input_tokens=%s',aid,job['symbol'],latency,usage.get('input_tokens'))
@@ -257,7 +258,7 @@ def main():
             log.exception('job_failed id=%s type=%s',job['id'],type(e).__name__)
             with store.db() as c:c.execute("UPDATE jobs SET status='failed',error=? WHERE id=?",(str(e)[:150],job['id']))
             store.put('ai_failure:'+job['symbol'],{'time':time.time(),'type':str(e)[:150]})
-            if time.time()-store.get('ai_failure_notice',0)>3600 or job['kind']=='manual':
+            if job['kind']=='manual' or (store.settings().get('notification_mode')!='hourly' and time.time()-store.get('ai_failure_notice',0)>3600):
                 p=store.get('price:'+job['symbol'],{})
                 store.enqueue_message(f"{job['symbol']} AI 해석을 이번에는 완료하지 못했어요. 자동 수집은 계속됩니다.\n최근 관측 가격: {p.get('price')}\n오류 유형: {str(e)[:80]}\n/status 로 상태 확인",reply_id=job['reply_id']);store.put('ai_failure_notice',time.time())
             time.sleep(30)

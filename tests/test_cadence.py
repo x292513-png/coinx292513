@@ -1,0 +1,50 @@
+import tempfile,unittest,json
+from pathlib import Path
+from unittest.mock import patch
+from wave_monitor import store,cadence
+class CadenceTests(unittest.TestCase):
+ def setUp(self):
+  self.tmp=tempfile.TemporaryDirectory();self.old=store.ROOT;store.ROOT=Path(self.tmp.name);store.init()
+  self.cfg={'notification_mode':'hourly','symbols':['BTCUSDT','ETHUSDT'],'sharp_move_rules':[[5,2],[15,3],[60,4]],'sharp_alert_cooldown_seconds':1800,'auto_calls_per_day':48}
+  self.mock=patch.object(store,'settings',return_value=self.cfg);self.mock.start()
+ def tearDown(self):self.mock.stop();store.ROOT=self.old;self.tmp.cleanup()
+ def test_threshold_and_repeat_escalation(self):
+  self.assertIsNone(cadence.sharp_candidate({5:1.99,15:2.99,60:3.99},self.cfg['sharp_move_rules']))
+  self.assertEqual(cadence.sharp_candidate({5:-2},self.cfg['sharp_move_rules']),(5,-2))
+  old={'time':100,'change':2.1}
+  self.assertFalse(cadence.can_alert(old,110,2.2,1800))
+  self.assertTrue(cadence.can_alert(old,110,3.2,1800))
+  self.assertTrue(cadence.can_alert(old,110,-2,1800))
+ def test_hourly_brief_once_and_works_without_ai(self):
+  store.put('hourly_brief_slot',1)
+  with patch.object(cadence,'briefing',return_value='brief'):
+   cadence.tick(7201);cadence.tick(7220)
+  with store.db() as c:
+   self.assertEqual(c.execute('SELECT COUNT(*) FROM outbox').fetchone()[0],1)
+   self.assertEqual(c.execute('SELECT COUNT(*) FROM jobs').fetchone()[0],0)
+ def test_extreme_still_alerts_at_budget_limit_and_deduplicates(self):
+  with store.db() as c:
+   for i in range(48):c.execute("INSERT INTO calls(started,kind) VALUES (7000,'auto')")
+  store.put('price:BTCUSDT',{'price':100,'time':7200})
+  with patch.object(cadence,'changes',return_value={5:2.2}):cadence.tick(7201);cadence.tick(7210)
+  with store.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM outbox').fetchone()[0],1)
+ def test_hourly_ai_only_once_and_cap_respected(self):
+  with patch.object(cadence,'briefing',return_value='brief'):
+   cadence.tick(10501);cadence.tick(10505)
+  with store.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM jobs').fetchone()[0],2)
+ def test_pause_stops_notifications(self):
+  store.put('paused',True);store.put('hourly_brief_slot',1)
+  cadence.tick(7201)
+  with store.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM outbox').fetchone()[0],0)
+ def test_missing_old_candles_not_fabricated(self):
+  self.assertEqual(cadence.changes('BTCUSDT',100,7201),{})
+
+ def test_full_budget_skips_hourly_ai_but_sends_brief(self):
+  from wave_monitor.budget import day_start
+  with store.db() as c:
+   for i in range(48):c.execute("INSERT INTO calls(started,kind) VALUES (?,'auto')",(10500,))
+  store.put('hourly_brief_slot',1)
+  with patch.object(cadence,'briefing',return_value='brief'):cadence.tick(10501)
+  with store.db() as c:
+   self.assertEqual(c.execute('SELECT COUNT(*) FROM jobs').fetchone()[0],0)
+   self.assertEqual(c.execute('SELECT COUNT(*) FROM outbox').fetchone()[0],1)
