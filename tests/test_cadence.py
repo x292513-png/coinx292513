@@ -1,4 +1,5 @@
 import tempfile,unittest,json
+from datetime import datetime,timezone,timedelta
 from pathlib import Path
 from unittest.mock import patch
 from wave_monitor import store,cadence
@@ -26,6 +27,7 @@ class CadenceTests(unittest.TestCase):
   with store.db() as c:
    for i in range(48):c.execute("INSERT INTO calls(started,kind) VALUES (7000,'auto')")
   store.put('price:BTCUSDT',{'price':100,'time':7200})
+  store.put('briefing_sent_slot',cadence.briefing_slot(7201,self.cfg))
   with patch.object(cadence,'changes',return_value={5:2.2}):cadence.tick(7201);cadence.tick(7210)
   with store.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM outbox').fetchone()[0],1)
  def test_hourly_ai_only_once_and_cap_respected(self):
@@ -38,6 +40,24 @@ class CadenceTests(unittest.TestCase):
   with store.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM outbox').fetchone()[0],0)
  def test_missing_old_candles_not_fabricated(self):
   self.assertEqual(cadence.changes('BTCUSDT',100,7201),{})
+
+ def test_twice_daily_briefs_only_at_nine_and_twenty_one_kst(self):
+  self.cfg.update(notification_mode='twice_daily',briefing_hours_kst=[9,21],auto_calls_per_day=4)
+  kst=timezone(timedelta(hours=9))
+  times=[datetime(2026,9,20,h,0,5,tzinfo=kst).timestamp() for h in (8,9,10,20,21,22)]
+  with patch.object(cadence,'briefing',return_value='brief'):
+   for now in times:cadence.tick(now)
+  with store.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM outbox').fetchone()[0],2)
+
+ def test_twice_daily_ai_refreshes_five_minutes_before_each_brief(self):
+  self.cfg.update(notification_mode='twice_daily',briefing_hours_kst=[9,21],auto_calls_per_day=4)
+  kst=timezone(timedelta(hours=9))
+  morning=[datetime(2026,9,20,8,minute,5,tzinfo=kst).timestamp() for minute in (54,55,56)]
+  for now in morning:cadence.tick(now)
+  with store.db() as c:c.execute("UPDATE jobs SET status='done'")
+  evening=[datetime(2026,9,20,20,minute,5,tzinfo=kst).timestamp() for minute in (55,56)]
+  for now in evening:cadence.tick(now)
+  with store.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM jobs').fetchone()[0],4)
 
  def test_full_budget_skips_hourly_ai_but_sends_brief(self):
   from wave_monitor.budget import day_start

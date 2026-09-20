@@ -125,7 +125,7 @@ async def periodic():
                 if prev and is_invalid(prev['result'],p['price']) and store.get('invalidated:'+str(prev['id'])) is None:
                     store.put('invalidated:'+str(prev['id']),now)
                     store.event(symbol,'invalidation',{'analysis_id':prev['id'],'price':p['price']})
-                    if not store.get('paused',False) and cfg.get('notification_mode')!='hourly':
+                    if not store.get('paused',False) and not __import__('wave_monitor.cadence',fromlist=['enabled']).enabled():
                         store.enqueue_message(f"{symbol} 기존 시나리오 무효\n현재 {p['price']:,.2f} / 무효화 기준 {prev['result']['invalidation_price']:,.2f}\n분석 #{prev['id']}의 조건을 이탈했습니다. 새 구조를 확인합니다.",prev['id'])
                         store.queue(symbol,'invalidation')
             if now-last_scan>15:
@@ -170,7 +170,7 @@ async def periodic():
                     if reason:store.put('deferred_trigger:'+symbol,{'reason':reason,'time':now})
                     elif deferred and now-deferred['time']<1800:
                         if deferred['reason'] not in ['zone_approach','ict_midpoint_approach'] or near:reason=deferred['reason']
-                    if cfg.get('notification_mode')!='hourly' and reason and not store.get('paused',False) and now-store.get('last_auto_attempt:'+symbol,0)>=cfg['auto_min_seconds'] and (not prev or now-prev['created']>=cfg['auto_min_seconds']):
+                    if not __import__('wave_monitor.cadence',fromlist=['enabled']).enabled() and reason and not store.get('paused',False) and now-store.get('last_auto_attempt:'+symbol,0)>=cfg['auto_min_seconds'] and (not prev or now-prev['created']>=cfg['auto_min_seconds']):
                         job_id=store.queue(symbol,reason)
                         if job_id:
                             store.event(symbol,'analysis_trigger',{'reason':reason,'job_id':job_id})

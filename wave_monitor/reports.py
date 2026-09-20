@@ -73,7 +73,8 @@ def status_text():
         pending=c.execute("SELECT COUNT(*) FROM jobs WHERE status IN ('pending','running')").fetchone()[0]
     lines += [f"오늘 AI: 자동 {counts.get('auto',0)}/{cfg['auto_calls_per_day']} · 질문 {counts.get('manual',0)}/{cfg['manual_calls_per_day']}",f"분석 대기/진행 {pending}건",'', '사용법: BTC 분석 / ETH 분석 / 알림에 답장하여 질문', '/status 상태 · /report 검증 · /pause 중지 · /resume 재개']
     lines += [f'프로그램 하루 상한 · 종목 합산 / 실패 시도 포함 · Codex 계정 한도와 별개',f'다음 초기화: {reset_label(now)}']
-    if cfg.get('notification_mode')=='hourly':lines += ['알림: 매시 정각 BTC·ETH 통합 브리핑 · 5분 2% / 15분 3% / 1시간 4% 급변 예외']
+    if cfg.get('notification_mode')=='twice_daily':lines += ['알림: 09:00·21:00 KST BTC·ETH 통합 브리핑 · 5분 2% / 15분 3% / 1시간 4% 급변 예외']
+    elif cfg.get('notification_mode')=='hourly':lines += ['알림: 매시 정각 BTC·ETH 통합 브리핑 · 5분 2% / 15분 3% / 1시간 4% 급변 예외']
     updated=store.get('learning_updated_at')
     lines.extend(['',f"과거 사례 갱신: {((now-updated)/3600):.1f}시간 전" if updated else '과거 사례: 첫 수집 준비 중','/learn 과거 패턴 비교 · 과거 수집과 통계 계산은 AI 호출 없음'])
     fractal=store.get('fractal_updated_at')
@@ -113,12 +114,12 @@ def maintenance():
     reports=store.ROOT/'data/reports';reports.mkdir(exist_ok=True)
     if store.get('daily_report_day')!=day and now-store.get('started_at',now)>3600:
         text=report_text();(reports/(day+'.txt')).write_text(text)
-        if store.settings().get('notification_mode')!='hourly':store.enqueue_message(text)
+        if not __import__('wave_monitor.cadence',fromlist=['enabled']).enabled():store.enqueue_message(text)
         store.put('daily_report_day',day)
     if now-store.get('started_at',now)>=7*86400 and not store.get('seven_day_report_sent'):
         text='일주일 검증 기간이 끝났어요. 감시는 계속됩니다.\n\n'+report_text()
         (reports/'seven-day-review.txt').write_text(text)
-        if store.settings().get('notification_mode')!='hourly':store.enqueue_message(text)
+        if not __import__('wave_monitor.cadence',fromlist=['enabled']).enabled():store.enqueue_message(text)
         store.put('seven_day_report_sent',now)
     # Limit chart and transient model files without deleting durable analyses.
     for folder,days in [('charts',14),('ai',2)]:

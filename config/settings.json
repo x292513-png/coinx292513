@@ -26,7 +26,7 @@
   "model": "gpt-5.5",
   "reasoning_effort": "medium",
   "ai_timeout_seconds": 240,
-  "auto_calls_per_day": 48,
+  "auto_calls_per_day": 4,
   "manual_calls_per_day": 12,
   "auto_min_seconds": 900,
   "quiet_review_seconds": 7200,
@@ -35,7 +35,11 @@
   "paper_review_days": 7,
   "retention_days": 45,
   "listen_port": 8791,
-  "notification_mode": "hourly",
+  "notification_mode": "twice_daily",
+  "briefing_hours_kst": [
+    9,
+    21
+  ],
   "sharp_move_rules": [
     [
       5,

@@ -1,9 +1,24 @@
-"""Quiet hourly briefings; sharp-move alerts never depend on AI availability."""
+"""Quiet scheduled briefings; sharp-move alerts never depend on AI availability."""
 from datetime import datetime,timezone,timedelta
 from . import store
 
 KST=timezone(timedelta(hours=9))
-def enabled():return store.settings().get('notification_mode')=='hourly'
+def enabled():return store.settings().get('notification_mode') in ('hourly','twice_daily')
+
+def briefing_slot(now,cfg):
+    local=datetime.fromtimestamp(now,KST)
+    if cfg.get('notification_mode')=='hourly':return local.strftime('%Y-%m-%d-%H')
+    if local.hour in cfg.get('briefing_hours_kst',[9,21]):return local.strftime('%Y-%m-%d-%H')
+    return None
+
+def refresh_slot(now,cfg):
+    local=datetime.fromtimestamp(now,KST)
+    if cfg.get('notification_mode')=='hourly':
+        return local.strftime('%Y-%m-%d-%H') if local.minute>=55 else None
+    next_hour=(local.hour+1)%24
+    if local.minute>=55 and next_hour in cfg.get('briefing_hours_kst',[9,21]):
+        return local.strftime('%Y-%m-%d-')+str(next_hour).zfill(2)
+    return None
 
 def changes(symbol,price,now):
     out={}
@@ -58,12 +73,14 @@ def briefing(now):
         if r.get('invalidation_price'):
             side='하회' if r['invalidation_side']=='below' else '상회'
             lines.append(f"관점 철회: {r['invalidation_price']:,.2f} {side}")
-    lines += ['','정기 브리핑은 매시간 1회 · 급변만 별도 알림. AI 해석 시각과 현재 가격 시각은 다를 수 있어요.']
+    hours=store.settings().get('briefing_hours_kst',[9,21])
+    schedule='·'.join(f'{hour:02d}:00' for hour in hours)
+    lines += ['',f'정기 브리핑은 하루 2회 ({schedule} KST) · 급변만 별도 알림. AI 해석 시각과 현재 가격 시각은 다를 수 있어요.']
     return '\n'.join(lines)
 
 def tick(now):
     cfg=store.settings()
-    if cfg.get('notification_mode')!='hourly' or store.get('paused',False):return
+    if not enabled() or store.get('paused',False):return
     for symbol in cfg['symbols']:
         p=store.get('price:'+symbol,{})
         if now-p.get('time',0)>30:continue
@@ -74,17 +91,16 @@ def tick(now):
             if can_alert(previous,now,change,cfg['sharp_alert_cooldown_seconds']):
                 store.enqueue_message(f"🚨 {symbol} 급변 · {minutes}분 {change:+.2f}%\n현재 {p['price']:,.2f}\n실시간 가격 기준 알림입니다. AI의 새 파동 판단은 아직 확인되지 않았습니다.")
                 store.put('sharp_alert:'+symbol,{'time':now,'change':change})
-    # Refresh silently near the end of each hour, for the upcoming hourly briefing.
-    slot=int(now//3600)
-    if now%3600>=3300 and store.get('hourly_ai_slot')!=slot:
+    # Refresh silently five minutes before a scheduled briefing.
+    refresh=refresh_slot(now,cfg)
+    if refresh and store.get('briefing_ai_slot')!=refresh:
         from .budget import day_start
         with store.db() as c:used=c.execute("SELECT COUNT(*) FROM calls WHERE kind='auto' AND started>=?",(day_start(now),)).fetchone()[0]
         if used<cfg['auto_calls_per_day']:
             for symbol in cfg['symbols']:store.queue(symbol,'hourly_refresh')
-        store.put('hourly_ai_slot',slot)
-    last=store.get('hourly_brief_slot')
-    if last is None:store.put('hourly_brief_slot',slot)
-    elif slot>last:
+        store.put('briefing_ai_slot',refresh)
+    slot=briefing_slot(now,cfg)
+    if slot and store.get('briefing_sent_slot')!=slot:
         from .presentation import pack
         from html import escape
-        store.enqueue_message(pack([escape(briefing(now))]));store.put('hourly_brief_slot',slot)
+        store.enqueue_message(pack([escape(briefing(now))]));store.put('briefing_sent_slot',slot)
