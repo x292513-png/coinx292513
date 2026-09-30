@@ -234,39 +234,51 @@ async def inbox(request):
     mid=int(d['message_id']);text=str(d.get('text',''))[:6000];reply=d.get('reply_id')
     if store.get('incoming:'+str(mid)):return web.json_response({'ok':True,'duplicate':True})
     store.put('incoming:'+str(mid),time.time())
-    if text.strip() in ['/status','상태','상태 확인','/start','도움말']:
-        from .reports import status_text
-        store.enqueue_message(status_text(),reply_id=mid)
-    elif text.strip() in ['/pause','알림 중지']:
-        store.put('paused',True);store.enqueue_message('자동 분석과 시황 알림을 중지했어요. 가격 수집과 기록은 계속됩니다. /resume 으로 재개할 수 있어요.',reply_id=mid)
-    elif text.strip() in ['/resume','알림 재개']:
-        store.put('paused',False);store.enqueue_message('자동 분석과 시황 알림을 재개했어요.',reply_id=mid)
-    elif text.strip() in ['/report','검증 보고서']:
-        from .reports import report_text
-        store.enqueue_message(report_text(),reply_id=mid)
-    elif text.strip() in ['/learn','학습 기록','과거 패턴']:
-        from .learning import report_text
-        store.enqueue_message(report_text(),reply_id=mid)
-    elif text.strip() in ['/fractal','프랙탈 기록','프랙탈 지식']:
-        from .fractals import report_text
-        store.enqueue_message(report_text(),reply_id=mid)
+    clean=text.strip();low=clean.lower();command=low.split()[0].split('@')[0] if low else ''
+    stop=command in ['/stop','/pause'] or low in ['stop','스탑','중지','알림 중지']
+    start=command in ['/start','/resume'] or low in ['start','시작','알림 재개']
+    if stop:
+        store.put('paused',True)
+        store.enqueue_message('하루 2회 브리핑과 급변 알림을 멈췄어요. 가격 수집과 기록은 계속됩니다. start 또는 다른 명령을 보내면 다시 시작합니다.',reply_id=mid)
     else:
-        ref=None
-        if reply:
-            with store.db() as c:
-                x=c.execute('SELECT analysis_id FROM messages WHERE message_id=?',(reply,)).fetchone()
-                if x and x[0]:ref=x[0]
-        symbols=[]
-        upper=text.upper()
-        if any(x in upper for x in ['BTC','비트']):symbols.append('BTCUSDT')
-        if any(x in upper for x in ['ETH','이더']):symbols.append('ETHUSDT')
-        if not symbols and ref:
-            with store.db() as c:
-                x=c.execute('SELECT symbol FROM analyses WHERE id=?',(ref,)).fetchone()
-                if x:symbols=[x[0]]
-        if not symbols:symbols=store.settings()['symbols']
-        for s in symbols:store.queue(s,'user_followup','manual',text,mid,ref)
-        store.enqueue_message('접수했어요. '+', '.join(symbols)+'의 현재 차트와 이전 분석을 함께 확인할게요.',reply_id=mid)
+        # Any interaction in this dedicated topic means the user wants monitoring active again.
+        was_paused=store.get('paused',False)
+        store.put('paused',False)
+        if start:
+            from .cadence import next_briefing,KST
+            next_at=next_briefing(time.time(),store.settings()).strftime('%m/%d %H:%M KST')
+            store.enqueue_message(f'하루 2회 브리핑을 시작했어요. 정기 시간은 09:00·21:00 KST이고, 다음 브리핑은 {next_at}입니다. 급변 알림도 다시 켰어요.',reply_id=mid)
+        elif clean in ['/status','상태','상태 확인','도움말'] or command=='/status':
+            from .reports import status_text
+            prefix='브리핑을 다시 시작했어요.\n\n' if was_paused else ''
+            store.enqueue_message(prefix+status_text(),reply_id=mid)
+        elif clean in ['/report','검증 보고서'] or command=='/report':
+            from .reports import report_text
+            store.enqueue_message(report_text(),reply_id=mid)
+        elif clean in ['/learn','학습 기록','과거 패턴'] or command=='/learn':
+            from .learning import report_text
+            store.enqueue_message(report_text(),reply_id=mid)
+        elif clean in ['/fractal','프랙탈 기록','프랙탈 지식'] or command=='/fractal':
+            from .fractals import report_text
+            store.enqueue_message(report_text(),reply_id=mid)
+        else:
+            ref=None
+            if reply:
+                with store.db() as c:
+                    x=c.execute('SELECT analysis_id FROM messages WHERE message_id=?',(reply,)).fetchone()
+                    if x and x[0]:ref=x[0]
+            symbols=[]
+            upper=text.upper()
+            if any(x in upper for x in ['BTC','비트']):symbols.append('BTCUSDT')
+            if any(x in upper for x in ['ETH','이더']):symbols.append('ETHUSDT')
+            if not symbols and ref:
+                with store.db() as c:
+                    x=c.execute('SELECT symbol FROM analyses WHERE id=?',(ref,)).fetchone()
+                    if x:symbols=[x[0]]
+            if not symbols:symbols=store.settings()['symbols']
+            for s in symbols:store.queue(s,'user_followup','manual',text,mid,ref)
+            prefix='브리핑도 다시 시작했어요. ' if was_paused else ''
+            store.enqueue_message(prefix+'접수했어요. '+', '.join(symbols)+'의 현재 차트와 이전 분석을 함께 확인할게요.',reply_id=mid)
     return web.json_response({'ok':True})
 
 

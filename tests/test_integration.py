@@ -17,7 +17,7 @@ class InboxTests(unittest.IsolatedAsyncioTestCase):
         self.tmp=tempfile.TemporaryDirectory();self.old=store.ROOT;store.ROOT=Path(self.tmp.name)
         (store.ROOT/'config').mkdir()
         (store.ROOT/'config/runtime.json').write_text(json.dumps({'bridge_key':'test-secret','allowed_user':10,'chat_id':-100,'topic_id':50}))
-        (store.ROOT/'config/settings.json').write_text(json.dumps({'symbols':['BTCUSDT','ETHUSDT']}))
+        (store.ROOT/'config/settings.json').write_text(json.dumps({'symbols':['BTCUSDT','ETHUSDT'],'auto_calls_per_day':4,'manual_calls_per_day':12,'notification_mode':'twice_daily','briefing_hours_kst':[9,21]}))
         store.init();app=web.Application();app.router.add_post('/inbox',inbox)
         self.client=TestClient(TestServer(app));await self.client.start_server()
     async def asyncTearDown(self):
@@ -39,10 +39,17 @@ class InboxTests(unittest.IsolatedAsyncioTestCase):
         with store.db() as c:
             rows=c.execute('SELECT symbol,analysis_ref,question FROM jobs').fetchall()
         self.assertEqual(len(rows),1);self.assertEqual(rows[0]['symbol'],'ETHUSDT');self.assertEqual(rows[0]['analysis_ref'],7)
-    async def test_pause_resume_changes_only_wave_state(self):
-        for mid,text,state in [(1,'/pause',True),(2,'/resume',False)]:
+    async def test_stop_and_start_aliases_change_only_wave_state(self):
+        for mid,text,state in [(1,'/stop',True),(2,'start',False),(3,'스탑',True),(4,'/start@wave_bot',False),(5,'/pause',True),(6,'/resume',False)]:
             r=await self.client.post('/inbox',json=dict(user_id=10,chat_id=-100,topic_id=50,message_id=mid,text=text),headers={'X-Wave-Key':'test-secret'})
             self.assertEqual(r.status,200);self.assertEqual(store.get('paused'),state)
+
+    async def test_other_command_restarts_paused_briefings(self):
+        store.put('paused',True)
+        payload=dict(user_id=10,chat_id=-100,topic_id=50,message_id=20,text='/status')
+        r=await self.client.post('/inbox',json=payload,headers={'X-Wave-Key':'test-secret'})
+        self.assertEqual(r.status,200);self.assertFalse(store.get('paused'))
+        with store.db() as c:self.assertIn('다시 시작',c.execute('SELECT text FROM outbox').fetchone()[0])
 
     async def test_fractal_command_does_not_call_ai(self):
         payload=dict(user_id=10,chat_id=-100,topic_id=50,message_id=30,text='/fractal')

@@ -20,6 +20,15 @@ def refresh_slot(now,cfg):
         return local.strftime('%Y-%m-%d-')+str(next_hour).zfill(2)
     return None
 
+def next_briefing(now,cfg):
+    local=datetime.fromtimestamp(now,KST)
+    hours=sorted(cfg.get('briefing_hours_kst',[9,21]))
+    for day_offset in (0,1):
+        day=local.date()+timedelta(days=day_offset)
+        for hour in hours:
+            candidate=datetime(day.year,day.month,day.day,hour,tzinfo=KST)
+            if candidate>local:return candidate
+
 def changes(symbol,price,now):
     out={}
     with store.db() as c:

@@ -41,6 +41,14 @@ class CadenceTests(unittest.TestCase):
  def test_missing_old_candles_not_fabricated(self):
   self.assertEqual(cadence.changes('BTCUSDT',100,7201),{})
 
+ def test_next_briefing_uses_korean_schedule(self):
+  self.cfg.update(briefing_hours_kst=[9,21])
+  kst=timezone(timedelta(hours=9))
+  morning=datetime(2026,9,30,8,30,tzinfo=kst).timestamp()
+  night=datetime(2026,9,30,22,0,tzinfo=kst).timestamp()
+  self.assertEqual(cadence.next_briefing(morning,self.cfg).strftime('%m/%d %H:%M'),'09/30 09:00')
+  self.assertEqual(cadence.next_briefing(night,self.cfg).strftime('%m/%d %H:%M'),'10/01 09:00')
+
  def test_twice_daily_briefs_only_at_nine_and_twenty_one_kst(self):
   self.cfg.update(notification_mode='twice_daily',briefing_hours_kst=[9,21],auto_calls_per_day=4)
   kst=timezone(timedelta(hours=9))
