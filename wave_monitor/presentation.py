@@ -52,8 +52,11 @@ def format_analysis(r,snap,aid,reason):
     invalid=f"{r['invalidation_price']:,.2f} {'하회' if r['invalidation_side']=='below' else '상회'}" if r['invalidation_price'] else '방향 확인 전'
     blocks.append('✅ <b>확인 조건</b>\n'+e(r['confirmation_rule'][:260])+'\n\n⛔ <b>무효화 · '+invalid+'</b> (실시간 가격)\n🎯 목표 후보 '+(', '.join(f'{v:,.2f}' for v in r['targets']) or '미지정'))
     from .trade_plan import format_plan
-    plan=format_plan(r)
-    if plan:blocks+=quoted('🛡 손절 · 일부 익절 · 잔량 관리',plan)
+    plan=format_plan(r,compact=True)
+    if plan:
+        blocks.append(e(plan))
+        if r.get('trade_plan',{}).get('enabled'):
+            blocks+=quoted('🛡 가격선 선정 근거 · 상세 관리',format_plan(r))
     frames='\n\n'.join(f"{f['tf']} · {f['count']}\n{f['evidence']}" for f in r['frames'] if f['status']!='standby')
     blocks+=quoted('🔎 시간봉별 근거 · 펼쳐 보기',frames)
     blocks+=quoted('🧩 ICT · 매물대 · RSI',f"FVG / OB\n{r.get('ict_comment','')}\n\n매물대\n{r['volume_comment']}\n\nRSI\n{r['rsi_comment']}")

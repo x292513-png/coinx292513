@@ -11,18 +11,38 @@ def validate(plan,bias):
     if bias=='bullish' and not stop<lo<=hi<t1<t2:raise ValueError('invalid_long_plan')
     if bias=='bearish' and not t2<t1<lo<=hi<stop:raise ValueError('invalid_short_plan')
     if not all(plan[k].strip() for k in ['entry_rule','stop_reason','breakeven_rule','hold_rule']):raise ValueError('incomplete_plan_rules')
+    if 'entry_preferred' in plan:
+        preferred=plan['entry_preferred']
+        if not isinstance(preferred,(int,float)) or not math.isfinite(preferred) or not lo<=preferred<=hi:raise ValueError('preferred_entry_outside_zone')
+        holding=plan.get('holding_invalidation')
+        if not isinstance(holding,(int,float)) or not math.isfinite(holding) or holding<=0:raise ValueError('invalid_holding_line')
+        if bias=='bullish' and not stop<=holding<t2:raise ValueError('holding_line_beyond_stop')
+        if bias=='bearish' and not t2<holding<=stop:raise ValueError('holding_line_beyond_stop')
+        if plan.get('holding_timeframe') not in ['15m','1h','4h','1d']:raise ValueError('invalid_holding_timeframe')
+        if not all(plan.get(k,'').strip() for k in ['entry_reason','tp1_reason','holding_exit_rule','review_rule','expected_horizon']):raise ValueError('incomplete_detailed_plan')
 
 def format_plan(result,compact=False):
     p=result.get('trade_plan')
-    if not p or not p.get('enabled'):return ''
+    if not p:return ''
+    if not p.get('enabled'):
+        return '🕰 진입 대기\n'+p.get('reason','현재 진입 조건 확인 중')[:(160 if compact else 600)]
     validate(p,result['bias'])
     entry=p['entry_high'] if result['bias']=='bullish' else p['entry_low']
-    risk=abs(entry-p['stop']);rr=abs(p['tp2']-entry)/risk
+    risk=abs(entry-p['stop']);rr1=abs(p['tp1']-entry)/risk;rr=abs(p['tp2']-entry)/risk
+    preferred=p.get('entry_preferred')
+    entry_text=f"진입 기준 {preferred:,.2f}" if preferred is not None else '진입 구간'
+    lines=['🛡 내가 선택한 관리 계획 · 미체결 가정',f"{entry_text} / 범위 {p['entry_low']:,.2f}–{p['entry_high']:,.2f}",f"최초 손절 {p['stop']:,.2f}",f"1차 익절 {p['tp1']:,.2f} · {p['take_pct']}% 정리",f"잔량 {100-p['take_pct']}% · 다음 목표 {p['tp2']:,.2f}"]
     n=85 if compact else 220
-    return (f"🛡 조건부 관리 계획 · 미체결 가정\n"
-            f"진입 {p['entry_low']:,.2f}–{p['entry_high']:,.2f} · {p['entry_rule'][:n]}\n"
-            f"손절 {p['stop']:,.2f} · {p['stop_reason'][:n]}\n"
-            f"1차 {p['tp1']:,.2f}에서 {p['take_pct']}% 익절 / 나머지 목표 {p['tp2']:,.2f}\n"
-            f"본전 이동: {p['breakeven_rule'][:n]}\n"
-            f"홀딩: {p['hold_rule'][:n]}\n"
-            f"최종 목표 손익비 {rr:.1f}R (진입 구간 불리한 끝값·비용 전)")
+    lines.append('진입 순서: '+p['entry_rule'][:n])
+    lines.append('본전 스탑 이동: '+p['breakeven_rule'][:n])
+    if p.get('holding_invalidation') is not None:
+        lines.append(f"잔량 정리 기준 {p['holding_invalidation']:,.2f} · {p['holding_timeframe']}")
+        lines.append('정리 조건: '+p['holding_exit_rule'][:n])
+    lines.append('홀딩: '+p['hold_rule'][:n])
+    if p.get('expected_horizon'):lines.append('관찰 기간: '+p['expected_horizon'][:n])
+    if p.get('review_rule'):lines.append('시간 경과 시 재검토: '+p['review_rule'][:n])
+    lines.append(f'손익비 1차 {rr1:.1f}R / 최종 {rr:.1f}R (진입 구간 불리한 끝값·비용 전)')
+    if not compact:
+        for label,key in [('내가 이 자리를 선택한 이유','reason'),('진입선 근거','entry_reason'),('손절선 근거','stop_reason'),('1차 익절 근거','tp1_reason')]:
+            if p.get(key):lines.extend(['',label+'\n'+p[key][:600]])
+    return '\n'.join(lines)

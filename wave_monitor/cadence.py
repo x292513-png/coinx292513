@@ -78,7 +78,7 @@ def briefing(now):
         from .trade_plan import format_plan
         plan=format_plan(r,compact=True)
         if plan:lines.append(plan)
-        zones=[] if plan else r.get('zones',[])[:3]
+        zones=[] if r.get('trade_plan',{}).get('enabled') else r.get('zones',[])[:3]
         for z in zones:
             role={'support':'지지','resistance':'저항','watch':'관찰'}.get(z['role'],z['role'])
             lines.append(f"• {role} {z['low']:,.2f}–{z['high']:,.2f}"+(' (이전 분석)' if invalid else ''))

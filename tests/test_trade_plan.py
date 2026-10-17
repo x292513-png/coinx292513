@@ -14,3 +14,26 @@ class PlanTests(unittest.TestCase):
  def test_disabled_and_legacy_have_no_fabricated_plan(self):
   validate({'enabled':False},'neutral')
   self.assertEqual(format_plan({}), '')
+
+ def detailed(self):
+  return self.plan()|dict(entry_preferred=101,entry_reason='FVG 중앙선 재지지',tp1_reason='앞선 고점 매물대',holding_invalidation=104,holding_timeframe='15m',holding_exit_rule='104 아래 15분 종가면 잔량 정리',review_rule='진입 후 15분 6개 안에 106 회복 실패면 재검토',expected_horizon='수 시간 동안 15분 구조 확인')
+
+ def test_preferred_entry_and_holding_details_are_visible(self):
+  p=self.detailed();validate(p,'bullish')
+  text=format_plan({'trade_plan':p,'bias':'bullish'})
+  for value in ['진입 기준 101.00','최초 손절 98.00','1차 익절 110.00','잔량 50%','104.00','15분 종가','15분 6개','앞선 고점 매물대','FVG 중앙선']:
+   self.assertIn(value,text)
+
+ def test_detailed_plan_rejects_entry_outside_zone_or_wider_stop(self):
+  for update in [dict(entry_preferred=103),dict(holding_invalidation=97),dict(holding_timeframe='none'),dict(review_rule='')]:
+   with self.subTest(update=update),self.assertRaises(ValueError):validate(self.detailed()|update,'bullish')
+
+ def test_waiting_plan_explains_confirmation_condition(self):
+  text=format_plan({'trade_plan':{'enabled':False,'reason':'110 위 15분 종가 확인 전 대기'}})
+  self.assertIn('110 위 15분 종가',text)
+  self.assertNotIn('진입 기준',text)
+
+ def test_short_holding_line_cannot_widen_the_initial_stop(self):
+  p=self.detailed()|dict(stop=106,tp1=94,tp2=88,holding_invalidation=100)
+  validate(p,'bearish')
+  with self.assertRaisesRegex(ValueError,'holding_line_beyond_stop'):validate(p|dict(holding_invalidation=107),'bearish')
