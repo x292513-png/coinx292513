@@ -59,6 +59,26 @@ class InboxTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(c.execute('SELECT COUNT(*) FROM jobs').fetchone()[0],0)
             self.assertIn('프랙탈',c.execute('SELECT text FROM outbox').fetchone()[0])
 
+    async def test_analyze_now_queues_both_symbols_without_waiting_for_briefing(self):
+        with store.db() as c:
+            for i in range(4):c.execute("INSERT INTO calls(started,kind) VALUES (1,'auto')")
+        payload=dict(user_id=10,chat_id=-100,topic_id=50,message_id=40,text='분석해줘')
+        with patch('wave_monitor.engine.time.time',return_value=10000):
+            response=await self.client.post('/inbox',json=payload,headers={'X-Wave-Key':'test-secret'})
+        self.assertEqual(response.status,200)
+        with store.db() as c:
+            jobs=c.execute('SELECT symbol,kind,status,created FROM jobs').fetchall()
+            notice=c.execute('SELECT text FROM outbox').fetchone()[0]
+        self.assertEqual({r['symbol'] for r in jobs},{'BTCUSDT','ETHUSDT'})
+        self.assertTrue(all(r['kind']=='manual' and r['status']=='pending' and r['created']==10000 for r in jobs))
+        self.assertIn('지금 기준',notice)
+
+    async def test_named_analysis_only_requests_that_symbol(self):
+        payload=dict(user_id=10,chat_id=-100,topic_id=50,message_id=41,text='이더 지금 분석해줘')
+        response=await self.client.post('/inbox',json=payload,headers={'X-Wave-Key':'test-secret'})
+        self.assertEqual(response.status,200)
+        with store.db() as c:self.assertEqual([tuple(r) for r in c.execute('SELECT symbol,kind FROM jobs')],[('ETHUSDT','manual')])
+
 
 class BridgeTests(unittest.IsolatedAsyncioTestCase):
     async def test_unrelated_topic_keeps_original_handler(self):

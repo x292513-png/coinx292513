@@ -71,7 +71,7 @@ def status_text():
     with store.db() as c:
         counts=dict(c.execute('SELECT kind,COUNT(*) FROM calls WHERE started>=? GROUP BY kind',(day,)).fetchall())
         pending=c.execute("SELECT COUNT(*) FROM jobs WHERE status IN ('pending','running')").fetchone()[0]
-    lines += [f"오늘 AI: 자동 {counts.get('auto',0)}/{cfg['auto_calls_per_day']} · 질문 {counts.get('manual',0)}/{cfg['manual_calls_per_day']}",f"분석 대기/진행 {pending}건",'', '사용법: BTC 분석 / ETH 분석 / 알림에 답장하여 질문', '/status 상태 · /report 검증 · stop 또는 스탑 중지 · start 재개']
+    lines += [f"오늘 AI: 자동 {counts.get('auto',0)}/{cfg['auto_calls_per_day']} · 질문 {counts.get('manual',0)}/{cfg['manual_calls_per_day']}",f"분석 대기/진행 {pending}건",'', '분석해줘 → BTC·ETH를 지금 기준으로 새 분석 / 비트 분석해줘 / 이더 분석해줘', '/status 상태 · /report 검증 · stop 또는 스탑 중지 · start 재개']
     lines += [f'프로그램 하루 상한 · 종목 합산 / 실패 시도 포함 · Codex 계정 한도와 별개',f'다음 초기화: {reset_label(now)}']
     if cfg.get('notification_mode')=='twice_daily':lines += ['알림: 09:00·21:00 KST BTC·ETH 통합 브리핑 · 5분 2% / 15분 3% / 1시간 4% 급변 예외']
     elif cfg.get('notification_mode')=='hourly':lines += ['알림: 매시 정각 BTC·ETH 통합 브리핑 · 5분 2% / 15분 3% / 1시간 4% 급변 예외']

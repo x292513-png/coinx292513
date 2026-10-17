@@ -278,7 +278,7 @@ async def inbox(request):
             if not symbols:symbols=store.settings()['symbols']
             for s in symbols:store.queue(s,'user_followup','manual',text,mid,ref)
             prefix='브리핑도 다시 시작했어요. ' if was_paused else ''
-            store.enqueue_message(prefix+'접수했어요. '+', '.join(symbols)+'의 현재 차트와 이전 분석을 함께 확인할게요.',reply_id=mid)
+            store.enqueue_message(prefix+'지금 기준으로 '+', '.join(symbols)+'를 새로 분석합니다. 최신 가격·차트로 계산하며, 결과에 분석 기준 시각을 표시할게요. 정기 브리핑 시간까지 기다리지 않아도 됩니다.',reply_id=mid)
     return web.json_response({'ok':True})
 
 

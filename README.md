@@ -8,11 +8,14 @@
 - VPS 소스·데이터: `/opt/trading-wave-monitor`
 - 수집 서비스: `trading-wave-monitor.service`, 별도 사용자 `tradewave`
 - AI 서비스: `trading-wave-ai.service`; 이미 로그인된 `blog`의 Codex 관리 인증을 사용. 인증 파일을 복사하지 않는다.
+- 분석 모델은 GPT-5.6 Sol medium. GPT-5.5의 ChatGPT 로그인 지원 종료와 구형 CLI 호환 문제를 해결하기 위해 `vendor/codex-0.163.0`의 전용 실행 파일을 사용하며, 기존 `/usr/bin/codex`는 변경하지 않는다.
 - 봇 연결: 기존 봇 소스는 그대로 두고 systemd drop-in에서 전용 래퍼로 시작. 새 토픽만 localhost 큐로 전달한다. getUpdates 수신자는 기존 봇 하나다.
 - 외부 공개 포트 없음. 상태 API는 127.0.0.1:8791만 사용한다.
 - VPS 기본 DNS의 바이낸스 REST 주소 응답이 연결 불가 IP를 반환해, 이 프로그램의 바이낸스 요청에만 HTTPS DNS 조회를 사용한다. 시스템 DNS는 변경하지 않고 원래 도메인의 TLS 인증서 검증을 유지한다.
 
 ## 포함 기능
+
+텔레그램의 `분석해줘`는 정기 브리핑과 별도로 BTC·ETH 최신 스냅샷을 받아 새 분석을 실행한다. `비트 분석해줘`·`이더 분석해줘`는 해당 종목만 요청한다. 자동 분석 하루 4회와 질문 분석 하루 12회는 별도 집계하며, 질문 한도에 걸리면 요청마다 이유와 초기화 시각을 회신한다. 오래된 분석을 현재 결과로 대신 보내지 않는다.
 
 - 실시간 캔들/체결 WebSocket, REST 부트스트랩/주기 보정, 재연결, 체결 누락 표시
 - RSI14, ATR 기반 인과적 pivot 확인, 일반 임펄스/ABC/다이아고날/ABCDE 삼각형 후보

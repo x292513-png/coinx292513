@@ -23,7 +23,8 @@
     "BTCUSDT": 5.0,
     "ETHUSDT": 0.5
   },
-  "model": "gpt-5.5",
+  "model": "gpt-5.6-sol",
+  "codex_binary": "/opt/trading-wave-monitor/vendor/codex-0.163.0/node_modules/.bin/codex",
   "reasoning_effort": "medium",
   "ai_timeout_seconds": 240,
   "auto_calls_per_day": 4,

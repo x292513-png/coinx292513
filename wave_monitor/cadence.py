@@ -67,6 +67,10 @@ def briefing(now):
         lines.append(f"{reference} · {stamp} 기준 · "+('무효화됨, 새 판단 대기' if invalid else '이전 해석 참고'))
         if invalid or now-a['created']>7200:
             lines.append('새 AI 해석 대기 · 이전 진입 조건은 현재 신호로 사용하지 않습니다.')
+            failure=store.get('ai_failure:'+symbol)
+            if failure:
+                cause='분석 모델 연결 오류' if failure.get('type')=='ai_model_unavailable' else '최근 AI 분석 실행 실패'
+                lines.append('⚠ '+cause+' · 현재 가격 감시는 계속 중입니다.')
             continue
         lines.append('🧭 '+r.get('headline','')[:100])
         if r.get('thesis'):lines.append('내 판단: '+r['thesis'][:160])

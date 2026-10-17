@@ -135,7 +135,7 @@ def run_codex(prompt,chart,job_id,anchors,ict_ids,fractal_ids=None):
     else:schema_data['properties']['fractal_example_ids']['maxItems']=0
     schema.write_text(json.dumps(schema_data))
     output=stem.with_suffix('.json')
-    cmd=['/usr/bin/codex','exec','--ignore-user-config','--ignore-rules','--ephemeral','--skip-git-repo-check','-s','read-only','-C',str(work),'-m',cfg['model'],'-c','model_reasoning_effort="'+cfg['reasoning_effort']+'"','-c','features.shell_tool=false','-c','web_search="disabled"','--json','--output-schema',str(schema),'-o',str(output),'-i',str(chart),'-']
+    cmd=[cfg.get('codex_binary','/usr/bin/codex'),'exec','--ignore-user-config','--ignore-rules','--ephemeral','--skip-git-repo-check','-s','read-only','-C',str(work),'-m',cfg['model'],'-c','model_reasoning_effort="'+cfg['reasoning_effort']+'"','-c','features.shell_tool=false','-c','web_search="disabled"','--json','--output-schema',str(schema),'-o',str(output),'-i',str(chart),'-']
     env={k:v for k,v in os.environ.items() if k in ['HOME','PATH','USER','LOGNAME','LANG','LC_ALL','SSL_CERT_FILE','SSL_CERT_DIR']}
     env['PATH']='/usr/local/bin:/usr/bin:/bin';env['HOME']='/home/blog'
     started=time.time()
@@ -156,6 +156,11 @@ def run_codex(prompt,chart,job_id,anchors,ict_ids,fractal_ids=None):
     if p.returncode or not output.exists():
         # Persist only sanitized high-level errors, not raw traces/prompt/token-bearing env.
         log.warning('codex_failed rc=%s error=%s',p.returncode,';'.join(errors)[:600])
+        error_text=';'.join(errors).lower()
+        if 'model is not supported' in error_text or ('model' in error_text and 'not supported' in error_text):
+            raise RuntimeError('ai_model_unavailable')
+        if 'requires a newer version of codex' in error_text:
+            raise RuntimeError('ai_client_outdated')
         raise RuntimeError('codex_exit_'+str(p.returncode))
     result=json.loads(output.read_text())
     return result,usage,time.time()-started
@@ -189,7 +194,7 @@ def process(job):
         calls=c.execute('SELECT COUNT(*) FROM calls WHERE kind=? AND started>=?',(kind,day)).fetchone()[0]
     if calls>=limit:
         key='budget_notice:'+kind+':'+str(day)
-        if not store.get(key) and (kind=='manual' or not __import__('wave_monitor.cadence',fromlist=['enabled']).enabled()):
+        if kind=='manual' or (not store.get(key) and not __import__('wave_monitor.cadence',fromlist=['enabled']).enabled()):
             store.enqueue_message(notice(kind,calls,limit,now),reply_id=job['reply_id']);store.put(key,True)
         return 'budget_limited'
     snap,raw=snapshot(job['symbol'])
@@ -198,6 +203,7 @@ def process(job):
         if time.time()*1000-raw[tf][-1]['close_t']>2*__import__('wave_monitor.analysis',fromlist=['TF_MS']).TF_MS[tf]:raise RuntimeError('stale_candles_'+tf)
     snap['focus_1m']=store.get('focus_1m:'+job['symbol'],False)
     snap['question']=job['question'];snap['trigger']=job['reason']
+    snap['on_demand']=kind=='manual'
     if job['analysis_ref']:
         with store.db() as c:
             ref=c.execute('SELECT created,symbol,result FROM analyses WHERE id=?',(job['analysis_ref'],)).fetchone()
@@ -269,7 +275,8 @@ def main():
             store.put('ai_failure:'+job['symbol'],{'time':time.time(),'type':str(e)[:150]})
             if job['kind']=='manual' or (not __import__('wave_monitor.cadence',fromlist=['enabled']).enabled() and time.time()-store.get('ai_failure_notice',0)>3600):
                 p=store.get('price:'+job['symbol'],{})
-                store.enqueue_message(f"{job['symbol']} AI 해석을 이번에는 완료하지 못했어요. 자동 수집은 계속됩니다.\n최근 관측 가격: {p.get('price')}\n오류 유형: {str(e)[:80]}\n/status 로 상태 확인",reply_id=job['reply_id']);store.put('ai_failure_notice',time.time())
+                problem='분석 모델 연결을 복구해야 합니다.' if str(e)=='ai_model_unavailable' else '현재 분석을 완료하지 못했습니다.'
+                store.enqueue_message(f"{job['symbol']} {problem}\n과거 분석으로 대신 답하지 않습니다.\n최근 관측 가격: {p.get('price')}\n오류 유형: {str(e)[:80]}\n/status 로 상태 확인",reply_id=job['reply_id']);store.put('ai_failure_notice',time.time())
             time.sleep(30)
 
 
