@@ -47,7 +47,7 @@ def can_alert(previous,now,change,cooldown):
 
 def briefing(now):
     from .engine import is_invalid
-    from .presentation import pack,quoted
+    from .presentation import pack,quoted,wave_blocks
     from .trade_plan import plan_summary,format_plan
     from html import escape as e
     lines=['🕐 <b>현재 상황 브리핑</b>\n'+datetime.fromtimestamp(now,KST).strftime('%m/%d %H:%M KST')]
@@ -76,6 +76,7 @@ def briefing(now):
                 lines.append('⚠ '+cause+' · 현재 가격 감시는 계속 중입니다.')
             continue
         lines.append('🧭 <b>'+e(r.get('headline','')[:100])+'</b>')
+        lines+=wave_blocks(r)
         plan=plan_summary(r)
         if plan:lines.append(plan)
         if r.get('trade_plan',{}).get('enabled'):

@@ -23,7 +23,7 @@ def render(snap, raw, path, result=None):
     asof=datetime.fromtimestamp(snap['asof'],kst).strftime('%Y-%m-%d %H:%M:%S KST')
     headline=(result or {}).get('headline','Top-down structure / measured pivots')
     fig.suptitle(f"{snap['symbol']} PERPETUAL · {asof}\n{headline}",fontsize=16,fontweight='bold')
-    for z,tf in enumerate(['1w','1d','4h','15m','5m','1m']):
+    for z,tf in enumerate(['1d','4h','1h','15m','5m','1m'] if '1h' in raw else ['1w','1d','4h','15m','5m','1m']):
         sub=grid[z//2,z%2].subgridspec(4,1,hspace=.02)
         ax=fig.add_subplot(sub[:3,0]);rx=fig.add_subplot(sub[3,0],sharex=ax)
         rows=raw[tf][-160:];xmap={c['t']:i for i,c in enumerate(rows)}

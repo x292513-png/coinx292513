@@ -4,7 +4,7 @@ import time
 import numpy as np
 from . import store
 
-TF_MS = {'1m':60000,'5m':300000,'15m':900000,'4h':14400000,'1d':86400000,'1w':604800000}
+TF_MS = {'1m':60000,'5m':300000,'15m':900000,'1h':3600000,'4h':14400000,'1d':86400000,'1w':604800000}
 
 
 def indicators(rows, period=14):
@@ -157,7 +157,7 @@ def snapshot(symbol):
     if trades:
         p=volume_profile([],name='collected_actual_24h',actual=trades);p['coverage']=store.get('trade_coverage:'+symbol,{});profiles.append(p)
     previous=store.latest(symbol)
-    snap={'symbol':symbol,'asof':now,'price':price,'frames':frames,'profiles':profiles,'previous':{'id':previous['id'],'created':previous['created'],'result':previous['result']} if previous else None,'rules':'주봉→일봉→4h→15m→5m. 1m은 관심 구간 진입시만 사용. 일반 캔들/바이낸스 USDT 무기한 체결가격. 마크가격 아님. 시간 UTC ms, 표시는 KST. WXY는 복합조정으로 간단히 설명하되 ABC와 동일한 내부 규칙을 강제하지 않음.'}
+    snap={'symbol':symbol,'asof':now,'price':price,'frames':frames,'profiles':profiles,'previous':{'id':previous['id'],'created':previous['created'],'result':previous['result']} if previous else None,'rules':'엘리어트 파동 우선: 일봉→4h→1h→15m. 주봉은 배경, 5m/1m은 진입 보조. 지지저항/FVG/OB는 파동 시나리오의 타점 확인용. 일반 캔들/바이낸스 USDT 무기한 체결가격. 마크가격 아님. 시간 UTC ms, 표시는 KST. WXY는 ABC와 동일한 내부 규칙을 강제하지 않음.'}
     from .ict import confluences
     snap['confluences']=confluences(frames,profiles,price['price'])
     return snap,raw

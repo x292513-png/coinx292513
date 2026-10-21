@@ -43,6 +43,7 @@ def format_analysis(r,snap,aid,reason):
     direction={'bullish':'🟢 상승 우세','bearish':'🔴 하락 우세','neutral':'🟡 방향 확인 중'}[r['bias']]
     header=f"<b>{e(r['symbol'].replace('USDT',''))} · {direction}</b>\n<b>{e(r['headline'][:140])}</b>\n{stamp} KST · #{aid} · 기준 {snap['price']['price']:,.2f}\n판단 강도 <b>{r['confidence']}/100</b>"
     blocks=[header,'🧭 <b>지금의 판단</b>\n'+e(r['thesis'][:420])]
+    blocks+=wave_blocks(r)
     if r.get('answer_to_user'):blocks+=quoted('💬 질문에 대한 답',r['answer_to_user'])
     prices=['📍 <b>중요 가격</b>']
     for z in r['zones']:
@@ -80,3 +81,17 @@ def pages(text):
         if isinstance(d,dict) and d.get('wave_format')=='html-v2':return d['pages']
     except (ValueError,TypeError):pass
     return [escape(chunk) for chunk in raw_chunks(text)]
+
+
+def wave_blocks(result):
+    views=result.get('wave_view',[])
+    if not views:return []
+    names={'1d':'일봉','4h':'4시간','1h':'1시간','15m':'15분'}
+    kinds={'impulse':'임펄스','abc':'ABC','wxy':'WXY','triangle':'수렴','unclear':'분류 보류'}
+    summary=['🌊 <b>엘리어트 파동 · 탑다운</b>']
+    details=['모델 시나리오 가중치 · 통계적 적중률 아님']
+    for v in views:
+        summary.append(f"<b>{names[v['tf']]} · {escape(v['trend'])}</b>\n{escape(v['count'])}")
+        weights=' · '.join(f'{kinds[k]} {n}%' for k,n in v['weights'].items())
+        details.append(f"{names[v['tf']]} · {v['count']}\n{weights}\n{v['evidence']}")
+    return ['\n\n'.join(summary)]+quoted('📊 파동 후보 비중과 근거 — 펼쳐 보기','\n\n'.join(details))
