@@ -47,7 +47,7 @@ PROMPT='''당신은 사용자의 바이낸스 USDT 무기한 선물 차트 분�
 1. frames에 1w,1d,4h,1h,15m,5m,1m을 정확히 한 번씩 포함. focus_1m이 false면 1m은 standby로 두고 판단의 핵심으로 쓰지 않는다.
 2. 일반 임펄스는 2파 원점 이탈 금지, 4파 1파 가격영역 중첩 금지, 3파 최단 금지(5파 길이 확보 전에는 이 조건 확정 불가). C파의 작은 5파와 큰 추세 상승을 구분. WXY는 복합조정이라고 간단히 설명하되 ABC 내부 규칙을 억지 적용하지 않는다.
 3. 리딩은 1/A 위치, 엔딩은 5/C 위치와 내부 파동을 확인. ABCDE 삼각형(4/B/X 후보)과 엔딩 다이아고날을 혼동하지 않는다. 형태만 닮으면 후보로 표시.
-4. 제공된 ATR pivot 후보는 보조 자료다. 차트와 데이터를 종합해 유효 카운팅을 제안하되 wave_labels는 입력 label_anchors의 id를 pivot_id에 정확하게 복사해서 선택한다. 시간/가격은 프로그램이 원본 좌표로 붙인다. label은 간단한 0/1/2/3/4/5/A/B/C/D/E/(1)/(2) 등. 최소 4h 또는 15m 한 봉에 주요 파동 라벨을 넣고 확정 불가 부분은 ?를 붙인다.
+4. 제공된 ATR pivot 후보는 보조 자료다. 차트와 데이터를 종합해 유효 카운팅을 제안하되 wave_labels는 입력 label_anchors의 id를 pivot_id에 정확하게 복사해서 선택한다. 시간/가격은 프로그램이 원본 좌표로 붙인다. label은 간단한 0/1/2/3/4/5/A/B/C/D/E/(1)/(2) 등. 일봉·4h·1h·15m 네 봉 모두 본문에서 채택한 주 카운트의 관측된 시작점과 진행 파동들을 빠짐없이 라벨링한다. ABC는 0/A/B/C, 임펄스는 0/1/2/3/4/5, 복합조정은 W/X/Y, 삼각형은 A/B/C/D/E를 실제 진행된 부분까지만 표시한다. 아직 생기지 않은 미래 5/C/E를 과거 피벗에 억지로 붙이지 않는다. 각 기준봉에는 최소 두 관측 좌표를 쓰되 카운트 자체가 불가능하면 해당 frames.status를 unclear로 하고 이유를 설명한다. 5m과 활성 1m도 본문에 구체적 카운트가 있으면 표시한다. 확정 불가 라벨은 ?를 붙이고 본문과 그림의 차수·시작점·방향을 일치시킨다.
 5. 진행 중인 파동/고점과 confirmed pivot, 가격 돌파확인은 별도. confirmed_at 이후에만 pivot 확인 가능. 단순 다이버전스가 반전을 확정하지 않는다.
 6. zones는 가까운 주요 지지/저항 2~4개, low<=high. 매물대 측정범위와 actual/approx 차이를 volume_comment에 담는다. 실제 거래 분포도 collection gaps가 있으면 부분 관측. 매물대에서는 실제 지지/거절을 확인.
 7. 방향성 시나리오에는 invalidation_price/side, confirmation_price와 구체적 5분봉 종가 기준, targets를 지정. 명확한 방향이 없으면 null 허용. targets는 현재 가격 기준 시나리오 방향으로, 확인가격은 현재의 미확인 조건이면 그 방향으로. 무효화 기준은 현재 이미 깨진 가격으로 설정하지 않는다. 무효화는 항상 실시간 체결가격 이탈 기준이며 종가 대기라고 서술하지 않는다. 돌파 확인만 5분 종가 기준이다.
@@ -94,7 +94,7 @@ def validate_result(result,snap,raw):
     for p in result['wave_labels']:
         a=anchors.get(p['pivot_id'])
         if not a:raise ValueError('ungrounded_wave_label')
-        grounded.append({'tf':a['tf'],'t':a['t'],'price':a['price'],'label':p['label'],'pivot_id':p['pivot_id']})
+        grounded.append({'tf':a['tf'],'t':a['t'],'price':a['price'],'label':p['label'],'pivot_id':p['pivot_id'],'confirmed':a['confirmed']})
     for z in result['zones']:
         if not (0<z['low']<=z['high']):raise ValueError('invalid_zone')
     price=snap['price']['price'];iv=result['invalidation_price'];side=result['invalidation_side']
@@ -107,9 +107,20 @@ def validate_result(result,snap,raw):
     valid_ict={z['id'] for f in snap['frames'].values() for z in f.get('ict',{}).get('active',[])}
     if any(x not in valid_ict for x in result['ict_watch_ids']):raise ValueError('ungrounded_ict_zone')
     result['wave_labels']=grounded
+    validate_label_coverage(result)
     examples={e['id']:{**e,'query_tf':tf} for tf,q in snap.get('fractal_memory',{}).get('queries',{}).items() for e in q['examples']}
     if any(x not in examples for x in result['fractal_example_ids']):raise ValueError('ungrounded_fractal_example')
     result['fractal_evidence']=[examples[x] for x in result['fractal_example_ids']]
+
+
+def validate_label_coverage(result):
+    for tf in ['1d','4h','1h','15m']:
+        frame=next((f for f in result['frames'] if f['tf']==tf),{})
+        points=[p for p in result['wave_labels'] if p['tf']==tf]
+        if frame.get('status')!='unclear' and len({p['t'] for p in points})<2:
+            raise ValueError('missing_wave_labels_'+tf)
+        if len({p['t'] for p in points})!=len(points):
+            raise ValueError('duplicate_wave_label_'+tf)
 
 
 def validate_wave_view(views):

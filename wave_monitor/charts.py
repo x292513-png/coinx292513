@@ -10,6 +10,20 @@ from datetime import datetime,timezone,timedelta
 from .analysis import indicators
 
 
+def chart_rows(rows, labels):
+    """Keep the start of the chosen count visible, not just its last 160 bars."""
+    start=max(0,len(rows)-160)
+    times={p['t'] for p in labels}
+    indexes=[i for i,c in enumerate(rows) if c['t'] in times]
+    if indexes:start=min(start,max(0,min(indexes)-8))
+    return rows[start:]
+
+
+def displayed_label(point):
+    label=point['label']
+    return label+'?' if point.get('confirmed') is False and '?' not in label else label
+
+
 def render(snap, raw, path, result=None):
     fonts=[x.name for x in font_manager.fontManager.ttflist]
     for name in ['Noto Sans CJK KR','Noto Sans CJK JP','NanumGothic']:
@@ -26,7 +40,8 @@ def render(snap, raw, path, result=None):
     for z,tf in enumerate(['1d','4h','1h','15m','5m','1m'] if '1h' in raw else ['1w','1d','4h','15m','5m','1m']):
         sub=grid[z//2,z%2].subgridspec(4,1,hspace=.02)
         ax=fig.add_subplot(sub[:3,0]);rx=fig.add_subplot(sub[3,0],sharex=ax)
-        rows=raw[tf][-160:];xmap={c['t']:i for i,c in enumerate(rows)}
+        frame_labels=[p for p in (result or {}).get('wave_labels',[]) if p['tf']==tf]
+        rows=chart_rows(raw[tf],frame_labels);xmap={c['t']:i for i,c in enumerate(rows)}
         low=min(c['l'] for c in rows);high=max(c['h'] for c in rows)
         for i,c in enumerate(rows):
             color='#41d6b0' if c['c']>=c['o'] else '#ff7c83'
@@ -36,9 +51,15 @@ def render(snap, raw, path, result=None):
         ax.plot([xmap[p['t']] for p in points],[p['price'] for p in points],color='#edbf67',lw=.9,alpha=.8)
         for p in points:
             ax.plot(xmap[p['t']],p['price'],marker='o' if p['confirmed'] else 'x',ms=3,color='#edbf67')
-        labels=[p for p in (result or {}).get('wave_labels',[]) if p['tf']==tf and p['t'] in xmap]
-        for p in labels:
-            ax.annotate(p['label'],(xmap[p['t']],p['price']),xytext=(0,8),textcoords='offset points',ha='center',color='#fff6ca',fontsize=10,fontweight='bold')
+        labels=sorted([p for p in frame_labels if p['t'] in xmap],key=lambda p:p['t'])
+        if labels:
+            ax.plot([xmap[p['t']] for p in labels],[p['price'] for p in labels],color='#ffd86b',lw=1.8,ls='--',zorder=5)
+        for n,p in enumerate(labels):
+            candle=rows[xmap[p['t']]]
+            upper=abs(p['price']-candle['h'])<=abs(p['price']-candle['l'])
+            offset=16 if upper else -19
+            if n and xmap[p['t']]-xmap[labels[n-1]['t']]<8:offset*=1.6
+            ax.annotate(displayed_label(p),(xmap[p['t']],p['price']),xytext=(0,offset),textcoords='offset points',ha='center',va='center',color='#fff0ad',fontsize=12,fontweight='bold',zorder=10,annotation_clip=False,bbox={'boxstyle':'round,pad=.22','facecolor':'#182332','edgecolor':'#e9bd5c','alpha':.95},arrowprops={'arrowstyle':'-','color':'#e9bd5c','lw':.7})
         profile=snap['profiles'][1 if tf in ['1w','1d','4h'] else 0]
         edges=profile['edges'];v=profile['volume'];mx=max(v) or 1
         for i,value in enumerate(v):
@@ -74,7 +95,10 @@ def render(snap, raw, path, result=None):
         rx.set_xticks(ticks);rx.set_xticklabels([datetime.fromtimestamp(rows[i]['t']/1000,kst).strftime(date_format) for i in ticks],fontsize=7)
         ax.tick_params(labelbottom=False)
         ax.set_xlim(-1,len(rows)+32);ax.grid(alpha=.35);rx.grid(alpha=.25)
-        ax.set_title(f"{tf} · closed candles · RSI {snap['frames'][tf]['rsi14']:.1f} · VP approximate",loc='left',fontsize=10)
+        frame=next((f for f in (result or {}).get('frames',[]) if f['tf']==tf),{})
+        count=frame.get('count','')
+        if result and not labels:count=('진입 보조 · ' if frame.get('status')=='standby' else '파동 좌표 미확정 · ')+count
+        ax.set_title(f"{tf} · RSI {snap['frames'][tf]['rsi14']:.1f}\n{count[:72]}",loc='left',fontsize=10)
     fig.text(.5,.002,'Binance futures | KST | Yellow: swing pivots (x: developing) | VP approximate | Blue/orange: bullish/bearish FVG/OB; dotted CE/MT | actual trades separate',ha='center',fontsize=8,color='#8da3b7')
     fig.savefig(path,dpi=115)
     plt.close(fig)
