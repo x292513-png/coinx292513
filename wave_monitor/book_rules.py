@@ -5,7 +5,52 @@ proves the internal subdivisions or future post-pattern confirmation.
 """
 import json
 import math
+import re
 from . import store
+
+READING_TOPICS = {
+    'impulse': ('impulse', '임펄스', '충격', '연장', '교대', '3파'),
+    'abc': ('abc', 'zigzag', '지그재그', 'flat', '플랫', '조정'),
+    'triangle': ('triangle', '삼각', '수렴', '확산'),
+    'diagonal': ('diagonal', '다이아', 'terminal', '터미널', '엔딩', '리딩'),
+    'wxy': ('wxy', 'complex', '복합', '숨은', '숨겨진', '집약'),
+    'harmonic': ('harmonic', '하모닉', 'gartley', 'crab', 'butterfly', 'shark', 'cypher', 'bat', 'prz'),
+}
+
+def reading_context(snap):
+    """Use reviewed reasoning, not raw OCR, in every analysis; bound token cost.
+
+    The always-on protocol covers the full decision sequence. Supplemental
+    sections are selected from all six reading records using current candidates
+    and the question. Selection is retrieval, not proof a pattern is present.
+    """
+    root=store.ROOT/'knowledge/full-reading'
+    protocol=(root/'analysis-protocol.md').read_text()
+    query=str(snap.get('question','')).lower()+' '+ ' '.join(
+        str(c.get('pattern','')).lower()
+        for f in snap.get('frames',{}).values() for c in f.get('candidates',[]))
+    topics=[k for k,terms in READING_TOPICS.items() if any(t in query for t in terms)]
+    if not topics:topics=['impulse','abc','wxy']
+    sections=[]
+    for path in sorted(root.glob('0[1-6]-*.md')):
+        for part in re.split(r'(?m)^## ',path.read_text())[1:]:
+            heading,_,body=part.partition('\n')
+            if path.name.startswith('06-') and 'harmonic' not in topics:continue
+            lower=(heading+' '+body).lower()
+            score=sum(sum(min(lower.count(t),3) for t in READING_TOPICS[k]) for k in topics)
+            score+=sum(5 for k in topics if any(t in heading.lower() for t in READING_TOPICS[k]))
+            if score:sections.append((score,path.name,heading,body.strip()))
+    sections.sort(key=lambda x:(-x[0],x[1],x[2]))
+    chosen=[];counts={}
+    for score,name,heading,body in sections:
+        if counts.get(name,0)>=2:continue
+        item={'record':name,'section':heading,'text':body}
+        if len(json.dumps(chosen+[item],ensure_ascii=False))>8000:continue
+        chosen.append(item);counts[name]=counts.get(name,0)+1
+        if len(chosen)>=6:break
+    return {'protocol':protocol,'relevant_sections':chosen,'retrieval_topics':topics,
+            'scope':'전체 제공 내용 정독을 판단 절차와 관련 독서 기록으로 반영. 자동 규칙 판정이나 검증 승률과는 구별.',
+            'source_gap':'Balan 제공 DOCX와 대체 Google 문서 모두 후반 본문/도표 누락. 누락 부분은 근거로 사용하지 않음.'}
 
 def load():
     return json.loads((store.ROOT/'knowledge/book-rules.json').read_text())
@@ -73,9 +118,10 @@ def context(snap):
         if r.get('cross_reference'):card['cross_reference']=r['cross_reference']
         if len(json.dumps(cards+[card],ensure_ascii=False))>11000:break
         cards.append(card)
-    return {'version':library['version'],'status':'reviewed_core_rules_only',
+    return {'version':library['version'],'status':'full_reading_reasoning_with_partial_numeric_checks',
             'rules':cards,'point_checks':checks,
-            'limits':'원전 핵심 규칙집. 미검토 OCR/요약 원문은 실행 지시가 아니다. 모든 책 완독/NEoWave 전체 검증/승률 개선 완료로 표현하지 않는다. 가중치는 주관적이며 책의 빈도를 실측 승률로 쓰지 않는다.'}
+            'reading':reading_context(snap),
+            'limits':'제공된 본문/도표는 정독했으나 Balan 원본 누락은 남아 있다. 미확인 OCR 숫자를 강제 규칙으로 사용하지 않는다. 전체 NEoWave 자동 검증/승률 개선을 완료했다고 표현하지 않는다. 가중치는 주관적이며 책의 빈도를 실측 승률로 쓰지 않는다.'}
 
 def citations(rule_ids):
     library=load();rules={r['id']:r for r in library['rules']}

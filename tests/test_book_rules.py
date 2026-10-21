@@ -2,7 +2,7 @@ import json,unittest
 from pathlib import Path
 from unittest.mock import patch
 from wave_monitor import store
-from wave_monitor.book_rules import impulse_price_check,context,citations,load
+from wave_monitor.book_rules import impulse_price_check,context,citations,load,reading_context
 
 class BookRulesTests(unittest.TestCase):
     def points(self,prices):
@@ -39,3 +39,25 @@ class BookRulesTests(unittest.TestCase):
             self.assertIn('EW01',ids);self.assertIn('QA01',ids);self.assertNotIn('HA01',ids)
             self.assertLessEqual(len(json.dumps(c['rules'],ensure_ascii=False)),11000)
             self.assertIn('1h',c['point_checks'])
+
+    def test_full_reading_reaches_final_model_input(self):
+        from wave_monitor.worker import compact_input
+        with patch.object(store,'ROOT',Path(__file__).resolve().parents[1]):
+            s={'asof':10,'frames':{},'profiles':[],'question':'삼각수렴 E파와 손절 분석'}
+            s['book_knowledge']=context(s)
+            r=compact_input(s)['book_knowledge']['reading']
+            self.assertIn('triangle',r['retrieval_topics'])
+            self.assertIn('B–D',r['protocol'])
+            self.assertIn('잔량',r['protocol'])
+            self.assertTrue(any('삼각' in x['text'] for x in r['relevant_sections']))
+            self.assertLessEqual(len(json.dumps(r['relevant_sections'],ensure_ascii=False)),8000)
+            self.assertIn('누락',r['source_gap'])
+
+    def test_harmonic_anchor_errata_are_available_without_overriding_wave_protocol(self):
+        with patch.object(store,'ROOT',Path(__file__).resolve().parents[1]):
+            r=reading_context({'question':'하모닉 Shark Cypher XA XC 앵커','frames':{}})
+            self.assertTrue(any(x['record']=='06-harmonic.md' for x in r['relevant_sections']))
+            self.assertIn('Shark',r['protocol']);self.assertIn('XC',r['protocol'])
+            self.assertIn('파동부터',r['protocol'])
+            ordinary=reading_context({'question':'현재 임펄스','frames':{}})
+            self.assertFalse(any(x['record']=='06-harmonic.md' for x in ordinary['relevant_sections']))

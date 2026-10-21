@@ -1,0 +1,142 @@
+{
+  "status": "all_available_content_read_complete",
+  "standard": "본문 전체 순차 독서와 도표 확인을 구분한다. 추출/렌더만으로 읽음 처리하지 않는다.",
+  "sources": {
+    "49a10df7f3bd": {
+      "title": "221208_175438_221214_182718_1.pdf",
+      "units": 20,
+      "text_reviewed": [
+        [
+          1,
+          20
+        ]
+      ],
+      "visual_reviewed": [
+        [
+          1,
+          20
+        ]
+      ],
+      "status": "full_read_with_open_cross_checks"
+    },
+    "382377d57641": {
+      "title": "Glenn Neely - Mastering Elliott Wave_수정.pdf",
+      "units": 169,
+      "text_reviewed": [
+        [
+          1,
+          169
+        ]
+      ],
+      "visual_reviewed": [
+        [
+          1,
+          169
+        ]
+      ],
+      "status": "full_read_with_source_errata"
+    },
+    "10c3cefe3dd3": {
+      "title": "Robert Balan Elliott Wave Principles copy.docx",
+      "units": 1067,
+      "text_reviewed": [
+        [
+          1,
+          1067
+        ]
+      ],
+      "visual_reviewed": [
+        "embedded:image74-image88"
+      ],
+      "status": "provided_text_read_original_incomplete",
+      "missing": "VI 후반/VII/VIII/색인 및 후반 도표. drawing 88개 중 73개가 1x1 placeholder를 참조",
+      "replacement_checked": {
+        "url": "https://docs.google.com/document/d/1N9hdMP0kUhFL4y7vxsK8tdCZ3kij6BrXLGFmISIEYSo/edit",
+        "result": "공백 정규화 본문 동일. 후반 positioned image에 복구 URI 없음. 누락 해소 안 됨."
+      }
+    },
+    "efeeb1197d8e": {
+      "title": "Visual Guide to Elliott Wave Trading(구글번역).docx",
+      "units": 1145,
+      "text_reviewed": [
+        [
+          1,
+          1145
+        ]
+      ],
+      "visual_reviewed": [
+        "guide-media/manifest.json entries 1-223"
+      ],
+      "status": "full_read_with_source_errata"
+    },
+    "8e6403304f3a": {
+      "title": "[Must] 5장 노트정리.pdf",
+      "units": 9,
+      "text_reviewed": [
+        [
+          1,
+          9
+        ]
+      ],
+      "visual_reviewed": [
+        [
+          1,
+          9
+        ]
+      ],
+      "status": "full_read_with_open_cross_checks"
+    },
+    "b3db8d3d9cd4": {
+      "title": "harmonic-patterns.pdf",
+      "units": 229,
+      "text_reviewed": [
+        [
+          1,
+          229
+        ]
+      ],
+      "visual_reviewed": [
+        [
+          1,
+          229
+        ]
+      ],
+      "status": "provided_content_read_complete_with_source_errata"
+    },
+    "b62faa00c881": {
+      "title": "neely-revised.pdf",
+      "units": 554,
+      "text_reviewed": [
+        [
+          1,
+          554
+        ]
+      ],
+      "visual_reviewed": [
+        [
+          1,
+          554
+        ]
+      ],
+      "status": "provided_content_read_complete"
+    },
+    "d269461abe54": {
+      "title": "엘리어트 파동이론 기본 (by 엘갤).pdf",
+      "units": 21,
+      "text_reviewed": [
+        [
+          1,
+          21
+        ]
+      ],
+      "visual_reviewed": [
+        [
+          1,
+          21
+        ]
+      ],
+      "status": "full_read_with_open_cross_checks"
+    }
+  },
+  "limitation": "Balan 원본 자체의 누락은 미복구. 정독 완료와 전체 규칙의 자동 구현/예측 성능 검증은 별도."
+}

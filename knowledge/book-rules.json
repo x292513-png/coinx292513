@@ -1,6 +1,6 @@
 {
-  "version": "2026-10-21.1",
-  "scope": "원문에서 검토한 핵심 규칙. 전체 NEoWave 자동 판정이나 성능 보정 완료를 뜻하지 않음.",
+  "version": "2026-10-21.full-reading.1",
+  "scope": "전체 제공 내용 정독의 판단 절차와 관련 상세 기록을 함께 적용. 규칙 카드와 수치 검사는 부분 구현이며 Balan 원본 누락 존재.",
   "sources": {
     "neely": {"title": "Glenn Neely · Mastering Elliott Wave", "id": "382377d57641", "locator_type": "PDF 파일 페이지; 인쇄 쪽수는 별도"},
     "balan": {"title": "Robert Balan · Elliott Wave Principle", "id": "10c3cefe3dd3", "locator_type": "제공 DOCX의 1부터 시작하는 문단 번호"},

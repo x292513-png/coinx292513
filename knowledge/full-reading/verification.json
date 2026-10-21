@@ -1,0 +1,102 @@
+{
+  "checked_at": "2026-10-21T10:13:00.322687+00:00",
+  "local_tests_passed": 78,
+  "vps_stage_tests_passed": 78,
+  "ai_test_call": false,
+  "telegram_test_send": false,
+  "symbols": {
+    "BTCUSDT": {
+      "timeframes": [
+        "1d",
+        "4h",
+        "1h",
+        "15m"
+      ],
+      "protocol_chars": 3029,
+      "topics": [
+        "impulse",
+        "abc",
+        "diagonal"
+      ],
+      "sections": [
+        {
+          "record": "04-neely-original.md",
+          "section": "PDF96–110: 8장 복합구조와 연장·시작점"
+        },
+        {
+          "record": "05-neely-revised.md",
+          "section": "PDF 441–460 / 인쇄 443–462: 터미널과 플랫 세부 구별"
+        },
+        {
+          "record": "05-neely-revised.md",
+          "section": "PDF 261–280 / 인쇄 263–282: 충격 유형과 조정 분류"
+        },
+        {
+          "record": "01-foundations.md",
+          "section": "엘갤 기본 PDF 1–21쪽"
+        },
+        {
+          "record": "04-neely-original.md",
+          "section": "PDF 125–127: 임펄스 진행 라벨별 조건"
+        }
+      ],
+      "selected_note_chars": 7711,
+      "final_input_preserved": true
+    },
+    "ETHUSDT": {
+      "timeframes": [
+        "1d",
+        "4h",
+        "1h",
+        "15m"
+      ],
+      "protocol_chars": 3029,
+      "topics": [
+        "impulse",
+        "abc",
+        "triangle",
+        "diagonal"
+      ],
+      "sections": [
+        {
+          "record": "04-neely-original.md",
+          "section": "PDF71–84: 조정 유형·수렴·확산과 확인 조건"
+        },
+        {
+          "record": "01-foundations.md",
+          "section": "엘갤 기본 PDF 1–21쪽"
+        },
+        {
+          "record": "05-neely-revised.md",
+          "section": "PDF 441–460 / 인쇄 443–462: 터미널과 플랫 세부 구별"
+        },
+        {
+          "record": "04-neely-original.md",
+          "section": "PDF 128–139: Flat/ZZ/삼각형 라벨 정밀 조건"
+        }
+      ],
+      "selected_note_chars": 7877,
+      "final_input_preserved": true
+    }
+  },
+  "services": {
+    "trading-wave-monitor.service": "active",
+    "trading-wave-ai.service": "active"
+  },
+  "deployed_file_hashes": {
+    "wave_monitor/book_rules.py": "579dbb1d145c0930f496af8d0daf2762bb14ff0263c7cf36529fca671b385ac7",
+    "wave_monitor/worker.py": "c9c20c1003e8185035ac29ebec85179d78222f2b15a7e53fb890703288b23f4d",
+    "tests/test_book_rules.py": "edcc54259276e0c800e0b6944582adbe02005f6bbe80a559babb114f1c0392f4",
+    "knowledge/book-rules.json": "9646c92d8c82a468c79c91e9ffdb4c6e31ec08bae201aa8d25ebe4dc22c6478a",
+    "knowledge/analysis-principles.md": "a707ae2ab365842259dcdcdc27ab05c488151505982515a34889ebd12775c8da",
+    "knowledge/book-study-status.md": "2aab3326b5fad562a15797cfe80bdd49517bc1bbc4d21417ef76634df93143c4",
+    "knowledge/full-reading/06-harmonic.md": "93583103fcd69e809780c303be67aa90d643bb3902c313f5b0e1b5393a4f013b",
+    "knowledge/full-reading/analysis-protocol.md": "eaa9dd89c12a96e0f5033f884f09e637267637b1fbcf1dad0643eca65680b588",
+    "knowledge/full-reading/05-neely-revised.md": "dbb668ab4a14de1137de4279097243a810e99251291a9ee1aa194a3078d10521",
+    "knowledge/full-reading/03-visual-guide.md": "c1e003ca7e9136ab3e265bcc2e0bdd4635cf2eabdcdedd451658ccce712486b1",
+    "knowledge/full-reading/01-foundations.md": "cd6f6c4374375100d809ffd60ca37606a1085d0f9cf6e3c3d609603d2a919c4b",
+    "knowledge/full-reading/progress.json": "3ad6844c5a8cece563aa0983917baef3b183244fcd8f54442a99d80362d92ebe",
+    "knowledge/full-reading/02-balan.md": "4ec9b083735b8f372d5dacb861387dd6f5765a8422efcf6b51597772bae76764",
+    "knowledge/full-reading/04-neely-original.md": "6966095e1cfac184728675676a71bd8a24d437e79375fe49453dc02c60379287"
+  }
+}
