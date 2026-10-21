@@ -1,0 +1,96 @@
+{
+  "checked_at": 1792580725.8141055,
+  "ai_test_call": true,
+  "telegram_test_send": true,
+  "native_app_received_observed": true,
+  "native_observation": "BTC 19:57, ETH 19:59, ETH corrected 20:03 KST: body with collapsed detailed sections and chart visible. Toggle interaction unavailable through native accessibility API; not claimed tested.",
+  "tests_passed": 78,
+  "corrected_previous_message_id": 9503,
+  "analyses": [
+    {
+      "symbol": "BTCUSDT",
+      "analysis_id": 464,
+      "job_id": 875,
+      "messages": [
+        {
+          "message_id": 9500,
+          "kind": "outgoing",
+          "url": "https://t.me/c/4324986998/4450/9500"
+        },
+        {
+          "message_id": 9501,
+          "kind": "outgoing",
+          "url": "https://t.me/c/4324986998/4450/9501"
+        },
+        {
+          "message_id": 9502,
+          "kind": "outgoing",
+          "url": "https://t.me/c/4324986998/4450/9502"
+        }
+      ],
+      "stale_at_publication": false,
+      "book_version": "2026-10-21.full-reading.1"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "analysis_id": 465,
+      "job_id": 876,
+      "messages": [
+        {
+          "message_id": 9503,
+          "kind": "outgoing",
+          "url": "https://t.me/c/4324986998/4450/9503"
+        },
+        {
+          "message_id": 9504,
+          "kind": "outgoing",
+          "url": "https://t.me/c/4324986998/4450/9504"
+        },
+        {
+          "message_id": 9505,
+          "kind": "outgoing",
+          "url": "https://t.me/c/4324986998/4450/9505"
+        }
+      ],
+      "stale_at_publication": false,
+      "book_version": "2026-10-21.full-reading.1"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "analysis_id": 466,
+      "job_id": 877,
+      "messages": [
+        {
+          "message_id": 9506,
+          "kind": "outgoing",
+          "url": "https://t.me/c/4324986998/4450/9506"
+        },
+        {
+          "message_id": 9507,
+          "kind": "outgoing",
+          "url": "https://t.me/c/4324986998/4450/9507"
+        },
+        {
+          "message_id": 9508,
+          "kind": "outgoing",
+          "url": "https://t.me/c/4324986998/4450/9508"
+        }
+      ],
+      "stale_at_publication": false,
+      "book_version": "2026-10-21.full-reading.1"
+    }
+  ],
+  "format_receipt": {
+    "message_id": 9507,
+    "entities": [
+      "bold",
+      "expandable_blockquote",
+      "text_link"
+    ]
+  },
+  "quality_fixes": [
+    "Triangle B/D boundary comparison and alternate classification",
+    "No retrospective entry fill after confirmation; specify next retest or current price range"
+  ],
+  "protocol_sha256": "e364aa08c3c472eaab0083a663db48164f4d657764fbee1ea2dc67da8e780e25"
+}
