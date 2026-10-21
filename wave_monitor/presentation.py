@@ -65,6 +65,8 @@ def format_analysis(r,snap,aid,reason):
     if len(r['thesis'])>420:detail+='\n\n전체 판단\n'+r['thesis']
     blocks+=quoted('↪ 대안과 변화',detail)
     if r.get('learning_comment'):blocks+=quoted('📚 과거 사례와 최근 흐름',r['learning_comment'])
+    if r.get('book_comment'):
+        blocks+=quoted('📖 적용한 파동 규칙 · 출처',r['book_comment']+'\n\n'+'\n'.join(r.get('book_sources',[])))
     if r.get('fractal_comment'):
         detail=r['fractal_comment']
         for f in r.get('fractal_evidence',[]):
