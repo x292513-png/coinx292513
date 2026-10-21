@@ -1,6 +1,22 @@
 """Advisory plans only: no account access, position tracking or order execution."""
 import math
 
+def plan_summary(result):
+    """Price landmarks only; detailed conditions belong in a disclosure."""
+    from html import escape
+    p=result.get('trade_plan')
+    if not p:return ''
+    if not p.get('enabled'):return '🕰 <b>진입 대기</b>\n'+escape(p.get('reason','현재 진입 조건 확인 중'))
+    validate(p,result['bias'])
+    preferred=p.get('entry_preferred')
+    entry=f'{preferred:,.2f}' if preferred is not None else f"{p['entry_low']:,.2f}–{p['entry_high']:,.2f}"
+    side='롱' if result['bias']=='bullish' else '숏'
+    return '\n\n'.join([
+        f'📌 <b>{side} 진입 기준 · {entry}</b>\n허용 구간 {p["entry_low"]:,.2f}–{p["entry_high"]:,.2f}\n조건 확인 후 진입 · 아래 진입 순서 참고',
+        f'⛔ <b>최초 손절 · {p["stop"]:,.2f}</b>',
+        f'🎯 <b>1차 익절 · {p["tp1"]:,.2f}</b>\n{p["take_pct"]}% 정리',
+        f'🏁 <b>잔량 목표 · {p["tp2"]:,.2f}</b>\n나머지 {100-p["take_pct"]}% · 홀딩 조건은 아래 펼쳐 보기'])
+
 def validate(plan,bias):
     if not plan['enabled']:return
     keys=['entry_low','entry_high','stop','tp1','tp2']
@@ -45,4 +61,4 @@ def format_plan(result,compact=False):
     if not compact:
         for label,key in [('내가 이 자리를 선택한 이유','reason'),('진입선 근거','entry_reason'),('손절선 근거','stop_reason'),('1차 익절 근거','tp1_reason')]:
             if p.get(key):lines.extend(['',label+'\n'+p[key][:600]])
-    return '\n'.join(lines)
+    return '\n\n'.join(lines)

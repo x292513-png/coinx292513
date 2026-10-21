@@ -47,13 +47,16 @@ def can_alert(previous,now,change,cooldown):
 
 def briefing(now):
     from .engine import is_invalid
-    lines=['🕐 현재 상황 브리핑 · '+datetime.fromtimestamp(now,KST).strftime('%m/%d %H:%M KST')]
+    from .presentation import pack,quoted
+    from .trade_plan import plan_summary,format_plan
+    from html import escape as e
+    lines=['🕐 <b>현재 상황 브리핑</b>\n'+datetime.fromtimestamp(now,KST).strftime('%m/%d %H:%M KST')]
     for symbol in store.settings()['symbols']:
         p=store.get('price:'+symbol,{})
         if now-p.get('time',0)>30:
             lines += ['',symbol+' · 실시간 데이터 지연, 현재 판단 보류'];continue
         price=p['price'];moves=changes(symbol,price,now)
-        lines += ['',f"📍 {symbol} · {price:,.2f}",' · '.join(f'{m}분 {v:+.2f}%' for m,v in moves.items()) or '변동률 기준 데이터 수집 중']
+        lines += [f"━━━━━━━━━━━━\n📍 <b>{e(symbol)} · {price:,.2f}</b>\n"+(' · '.join(f'{m}분 {v:+.2f}%' for m,v in moves.items()) or '변동률 기준 데이터 수집 중')]
         with store.db() as c:
             span=c.execute("SELECT MIN(l),MAX(h),COUNT(*) FROM candles WHERE symbol=? AND tf='1m' AND t>=?",(symbol,(now-3600)*1000)).fetchone()
         if span[2]>=58:lines.append(f'최근 1시간 범위 {span[0]:,.2f}–{span[1]:,.2f}')
@@ -72,24 +75,26 @@ def briefing(now):
                 cause='분석 모델 연결 오류' if failure.get('type')=='ai_model_unavailable' else '최근 AI 분석 실행 실패'
                 lines.append('⚠ '+cause+' · 현재 가격 감시는 계속 중입니다.')
             continue
-        lines.append('🧭 '+r.get('headline','')[:100])
-        if r.get('thesis'):lines.append('내 판단: '+r['thesis'][:160])
-        if r.get('fractal_comment') and r.get('fractal_evidence'):lines.append('🔁 과거 비교: '+r['fractal_comment'][:140])
-        from .trade_plan import format_plan
-        plan=format_plan(r,compact=True)
+        lines.append('🧭 <b>'+e(r.get('headline','')[:100])+'</b>')
+        plan=plan_summary(r)
         if plan:lines.append(plan)
+        if r.get('trade_plan',{}).get('enabled'):
+            lines+=quoted('🛡 진입 순서 · 본전 스탑 · 잔량 홀딩 — 펼쳐 보기',format_plan(r))
+        if r.get('thesis'):lines+=quoted('💬 내 판단과 근거 — 펼쳐 보기',r['thesis'])
+        if r.get('fractal_comment') and r.get('fractal_evidence'):lines+=quoted('🔁 과거 비교 — 펼쳐 보기',r['fractal_comment'])
         zones=[] if r.get('trade_plan',{}).get('enabled') else r.get('zones',[])[:3]
         for z in zones:
             role={'support':'지지','resistance':'저항','watch':'관찰'}.get(z['role'],z['role'])
             lines.append(f"• {role} {z['low']:,.2f}–{z['high']:,.2f}"+(' (이전 분석)' if invalid else ''))
-        lines.append('다음 확인: '+r.get('next_watch',r.get('confirmation_rule',''))[:120])
+        watch=r.get('next_watch',r.get('confirmation_rule',''))
+        if watch:lines+=quoted('✅ 다음 확인 조건 — 펼쳐 보기',watch)
         if r.get('invalidation_price'):
             side='하회' if r['invalidation_side']=='below' else '상회'
             lines.append(f"관점 철회: {r['invalidation_price']:,.2f} {side}")
     hours=store.settings().get('briefing_hours_kst',[9,21])
     schedule='·'.join(f'{hour:02d}:00' for hour in hours)
     lines += ['',f'정기 브리핑은 하루 2회 ({schedule} KST) · 급변만 별도 알림. AI 해석 시각과 현재 가격 시각은 다를 수 있어요.']
-    return '\n'.join(lines)
+    return pack(lines)
 
 def tick(now):
     cfg=store.settings()
@@ -114,6 +119,4 @@ def tick(now):
         store.put('briefing_ai_slot',refresh)
     slot=briefing_slot(now,cfg)
     if slot and store.get('briefing_sent_slot')!=slot:
-        from .presentation import pack
-        from html import escape
-        store.enqueue_message(pack([escape(briefing(now))]));store.put('briefing_sent_slot',slot)
+        store.enqueue_message(briefing(now));store.put('briefing_sent_slot',slot)
