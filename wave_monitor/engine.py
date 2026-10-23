@@ -119,8 +119,6 @@ async def periodic():
                 p=store.get('price:'+symbol,{});prev=store.latest(symbol)
                 fresh=now-p.get('time',0)<30
                 if not fresh:
-                    if now-store.get('stale_alert:'+symbol,0)>3600:
-                        store.enqueue_message(f'{symbol} 실시간 데이터가 지연되어 새 진입 판단을 보류합니다. 연결 복구를 자동 시도 중입니다.');store.put('stale_alert:'+symbol,now)
                     continue
                 if prev and is_invalid(prev['result'],p['price']) and store.get('invalidated:'+str(prev['id'])) is None:
                     store.put('invalidated:'+str(prev['id']),now)
@@ -287,7 +285,8 @@ async def main():
     app=web.Application(client_max_size=20000);app.router.add_get('/health',health);app.router.add_post('/inbox',inbox)
     runner=web.AppRunner(app);await runner.setup();await web.TCPSite(runner,'127.0.0.1',store.settings()['listen_port']).start()
     async with ClientSession(connector=connector(),timeout=ClientTimeout(total=30)) as s:await bootstrap(s)
-    await asyncio.gather(stream(),periodic(),outbox(),reconcile())
+    from .freshness import price_guard
+    await asyncio.gather(stream(),periodic(),outbox(),reconcile(),price_guard())
 
 
 if __name__=='__main__':

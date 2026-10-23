@@ -216,6 +216,9 @@ def recent_dialogue(symbol,job_id):
     return [{'time':d['created'],'question':d['question'][:700],'answer':(json.loads(d['result']).get('answer_to_user') or json.loads(d['result']).get('thesis',''))[:700]} for d in reversed(rows)]
 
 
+from .freshness import refresh_for_analysis
+
+
 def process(job):
     from .budget import day_start,notice
     cfg=store.settings();now=time.time();day=day_start(now)
@@ -227,6 +230,7 @@ def process(job):
         if kind=='manual' or (not store.get(key) and not __import__('wave_monitor.cadence',fromlist=['enabled']).enabled()):
             store.enqueue_message(notice(kind,calls,limit,now),reply_id=job['reply_id']);store.put(key,True)
         return 'budget_limited'
+    refresh_for_analysis(job['symbol'])
     snap,raw=snapshot(job['symbol'])
     if time.time()-snap['price']['time']>30:raise RuntimeError('stale_price')
     for tf in ['1m','5m','15m']:

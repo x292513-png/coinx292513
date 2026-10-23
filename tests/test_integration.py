@@ -79,6 +79,14 @@ class InboxTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status,200)
         with store.db() as c:self.assertEqual([tuple(r) for r in c.execute('SELECT symbol,kind FROM jobs')],[('ETHUSDT','manual')])
 
+    async def test_exact_korean_analysis_commands(self):
+        for mid,text,symbol in [(51,'비트 분석','BTCUSDT'),(52,'이더 분석','ETHUSDT')]:
+            response=await self.client.post('/inbox',json=dict(user_id=10,chat_id=-100,topic_id=50,message_id=mid,text=text),headers={'X-Wave-Key':'test-secret'})
+            self.assertEqual(response.status,200)
+            with store.db() as c:
+                row=c.execute('SELECT symbol,kind,question FROM jobs WHERE reply_id=?',(mid,)).fetchone()
+            self.assertEqual(tuple(row),(symbol,'manual',text))
+
 
 class BridgeTests(unittest.IsolatedAsyncioTestCase):
     async def test_unrelated_topic_keeps_original_handler(self):

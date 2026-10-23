@@ -9,6 +9,7 @@ from wave_monitor.worker import process,run_codex
 
 class ManualAnalysisTests(unittest.TestCase):
     def setUp(self):
+        self.refresh_patch=patch('wave_monitor.worker.refresh_for_analysis');self.refresh=self.refresh_patch.start();self.addCleanup(self.refresh_patch.stop)
         self.tmp=tempfile.TemporaryDirectory();self.old=store.ROOT;store.ROOT=Path(self.tmp.name);store.init()
         self.cfg={'auto_calls_per_day':4,'manual_calls_per_day':12,'notification_mode':'twice_daily'}
         self.job={'id':1,'kind':'manual','symbol':'BTCUSDT','reply_id':101,'question':'분석해줘','reason':'user_followup','analysis_ref':None}
@@ -22,6 +23,7 @@ class ManualAnalysisTests(unittest.TestCase):
             for _ in range(4):c.execute("INSERT INTO calls(started,kind) VALUES (?,'auto')",(now,))
         with patch.object(store,'settings',return_value=self.cfg),patch('wave_monitor.worker.snapshot',return_value=({'price':{'time':now-60}},{})) as snapshot:
             with self.assertRaisesRegex(RuntimeError,'stale_price'):process(self.job)
+        self.refresh.assert_called_once_with('BTCUSDT')
         snapshot.assert_called_once_with('BTCUSDT')
         with store.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM analyses').fetchone()[0],0)
 
