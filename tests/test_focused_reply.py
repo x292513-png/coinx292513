@@ -12,3 +12,11 @@ class FocusedTests(unittest.TestCase):
             self.assertFalse(is_full_request(q),q)
             self.assertFalse(wants_quick(q),q)
         self.assertTrue(wants_quick('지금 들어간다면 손절 어디?'))
+
+    def test_html_document_preserves_bold_and_escapes_content_once(self):
+        from html import escape
+        from wave_monitor.presentation import pack,pages
+        rendered=pages(pack(['💬 <b>'+escape('가격 < 100 & 대기')+'</b>']))[0]
+        self.assertIn('<b>',rendered)
+        self.assertNotIn('&lt;b&gt;',rendered)
+        self.assertIn('&lt; 100 &amp;',rendered)

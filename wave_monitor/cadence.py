@@ -104,7 +104,8 @@ def tick(now):
         p=store.get('price:'+symbol,{})
         if now-p.get('time',0)>30:continue
         moves=changes(symbol,p['price'],now)
-        hit=sharp_candidate(moves,cfg['sharp_move_rules'])
+        from .alert_commands import rules_for
+        hit=sharp_candidate(moves,rules_for(symbol))
         if hit:
             minutes,change=hit;previous=store.get('sharp_alert:'+symbol)
             if can_alert(previous,now,change,cfg['sharp_alert_cooldown_seconds']):

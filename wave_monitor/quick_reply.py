@@ -75,4 +75,5 @@ async def answer(symbol, ref, question, mid):
         message=short_answer(analysis,price,time.time(),question)
     except Exception:
         message=symbol+' 현재 가격을 확인하지 못해 지금 진입용 손절을 제시할 수 없습니다. 잠시 후 다시 물어봐 주세요.'
-    store.enqueue_message(message,analysis_id=analysis['id'],reply_id=mid)
+    from .presentation import pack
+    store.enqueue_message(pack(message.split('\n\n')),analysis_id=analysis['id'],reply_id=mid)

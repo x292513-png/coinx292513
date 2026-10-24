@@ -97,6 +97,16 @@ class InboxTests(unittest.IsolatedAsyncioTestCase):
             row=c.execute('SELECT symbol,reason,question FROM jobs WHERE reply_id=71').fetchone()
         self.assertEqual(tuple(row),('ETHUSDT','focused_question',question))
 
+    async def test_natural_alert_setting_bypasses_ai_and_persists_rules(self):
+        cfg=store.settings();cfg['sharp_move_rules']=[[5,3],[15,3],[60,4]]
+        (store.ROOT/'config/settings.json').write_text(json.dumps(cfg))
+        store.put('paused',True)
+        response=await self.client.post('/inbox',json=dict(user_id=10,chat_id=-100,topic_id=50,message_id=81,text='급락 이나 급등 최소 2% 이상 5분안에 진행시 바로 브리핑해줘'),headers={'X-Wave-Key':'test-secret'})
+        self.assertTrue((await response.json())['alert_settings'])
+        for symbol in ['BTCUSDT','ETHUSDT']:self.assertIn([5,2.0],store.get('sharp_rules:'+symbol))
+        self.assertFalse(store.get('paused'))
+        with store.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM jobs').fetchone()[0],0)
+
 
 class BridgeTests(unittest.IsolatedAsyncioTestCase):
     async def test_unrelated_topic_keeps_original_handler(self):
