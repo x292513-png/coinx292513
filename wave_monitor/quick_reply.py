@@ -11,8 +11,10 @@ from .net import connector
 
 
 def wants_quick(text):
-    compact=''.join(text.lower().split())
-    return not any(x in compact for x in ['다시분석','새로분석','전체분석']) and any(x in compact for x in ['손절','스탑','익절','지금들어','지금진입','진입해도','들어가도'])
+    import re
+    compact=''.join(text.lower().split()).strip('?.!요')
+    compact=re.sub(r'^(비트코인|비트|이더리움|이더|btcusdt|ethusdt|btc|eth)', '', compact)
+    return bool(re.fullmatch(r'(지금|현재)?(들어간다면|들어가면|진입하면)?(손절|스탑|익절)(은|을|이|를)?(어디|얼마|가격|라인)(야|에|인가|인가요|잡아|잡을까|야해)?',compact))
 
 
 def recent_symbol():

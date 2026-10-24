@@ -284,6 +284,18 @@ async def inbox(request):
                     store.put('conversation_symbol',{'symbol':symbols[0],'time':time.time()})
                     await answer(symbols[0],ref,text,mid)
                 return web.json_response({'ok':True,'quick_reply':True})
+            from .focused_reply import is_full_request
+            if not is_full_request(text):
+                if not symbols:
+                    recent=recent_symbol()
+                    if recent:symbols=[recent]
+                if not symbols:
+                    store.enqueue_message('어느 종목 기준인가요? 비트·이더를 적거나 해당 차트에 답장하면 질문한 조건만 확인해 드립니다.',reply_id=mid)
+                else:
+                    if len(symbols)==1:store.put('conversation_symbol',{'symbol':symbols[0],'time':time.time()})
+                    for symbol in symbols:store.queue(symbol,'focused_question','manual',text,mid,ref)
+                    store.enqueue_message(', '.join(symbols)+'에서 말씀하신 조건만 최신 봉으로 확인할게요.',reply_id=mid)
+                return web.json_response({'ok':True,'focused_question':True})
             if len(symbols)==1:
                 store.put('conversation_symbol',{'symbol':symbols[0],'time':time.time()})
             else:

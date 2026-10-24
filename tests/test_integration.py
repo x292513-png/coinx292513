@@ -87,6 +87,16 @@ class InboxTests(unittest.IsolatedAsyncioTestCase):
                 row=c.execute('SELECT symbol,kind,question FROM jobs WHERE reply_id=?',(mid,)).fetchone()
             self.assertEqual(tuple(row),(symbol,'manual',text))
 
+    async def test_freeform_rsi_question_is_not_full_analysis_or_cached_stop(self):
+        from unittest.mock import AsyncMock
+        question='지금 15분봉 기준 이더리움 전저점 살짝 깨고 올리면 RSI 다이버전스 컨펌 같은데 저점 손절 어때?'
+        with patch('wave_monitor.quick_reply.answer',new_callable=AsyncMock) as quick:
+            response=await self.client.post('/inbox',json=dict(user_id=10,chat_id=-100,topic_id=50,message_id=71,text=question),headers={'X-Wave-Key':'test-secret'})
+        self.assertTrue((await response.json())['focused_question']);quick.assert_not_awaited()
+        with store.db() as c:
+            row=c.execute('SELECT symbol,reason,question FROM jobs WHERE reply_id=71').fetchone()
+        self.assertEqual(tuple(row),('ETHUSDT','focused_question',question))
+
 
 class BridgeTests(unittest.IsolatedAsyncioTestCase):
     async def test_unrelated_topic_keeps_original_handler(self):

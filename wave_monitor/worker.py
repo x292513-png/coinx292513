@@ -153,19 +153,20 @@ def compact_input(snap):
     return out
 
 
-def run_codex(prompt,chart,job_id,anchors,ict_ids,fractal_ids=None):
+def run_codex(prompt,chart,job_id,anchors,ict_ids,fractal_ids=None,custom_schema=None):
     cfg=store.settings();work=store.ROOT/'data/ai';work.mkdir(exist_ok=True)
-    stem=work/(str(job_id)+'-'+uuid.uuid4().hex[:8]);schema=work/'schema.json'
-    schema_data=json.loads(json.dumps(SCHEMA))
-    schema_data['properties']['wave_labels']['items']['properties']['pivot_id']['enum']=[a['id'] for a in anchors]
-    if ict_ids:schema_data['properties']['ict_watch_ids']['items']['enum']=ict_ids
-    else:schema_data['properties']['ict_watch_ids']['maxItems']=0
-    schema_data['properties']['fractal_example_ids']['maxItems']=2
-    if fractal_ids:schema_data['properties']['fractal_example_ids']['items']['enum']=fractal_ids
-    else:schema_data['properties']['fractal_example_ids']['maxItems']=0
+    stem=work/(str(job_id)+'-'+uuid.uuid4().hex[:8]);schema=stem.with_suffix('.schema.json')
+    schema_data=json.loads(json.dumps(custom_schema or SCHEMA))
+    if custom_schema is None:
+        schema_data['properties']['wave_labels']['items']['properties']['pivot_id']['enum']=[a['id'] for a in anchors]
+        if ict_ids:schema_data['properties']['ict_watch_ids']['items']['enum']=ict_ids
+        else:schema_data['properties']['ict_watch_ids']['maxItems']=0
+        schema_data['properties']['fractal_example_ids']['maxItems']=2
+        if fractal_ids:schema_data['properties']['fractal_example_ids']['items']['enum']=fractal_ids
+        else:schema_data['properties']['fractal_example_ids']['maxItems']=0
     schema.write_text(json.dumps(schema_data))
     output=stem.with_suffix('.json')
-    cmd=[cfg.get('codex_binary','/usr/bin/codex'),'exec','--ignore-user-config','--ignore-rules','--ephemeral','--skip-git-repo-check','-s','read-only','-C',str(work),'-m',cfg['model'],'-c','model_reasoning_effort="'+cfg['reasoning_effort']+'"','-c','features.shell_tool=false','-c','web_search="disabled"','--json','--output-schema',str(schema),'-o',str(output),'-i',str(chart),'-']
+    cmd=[cfg.get('codex_binary','/usr/bin/codex'),'exec','--ignore-user-config','--ignore-rules','--ephemeral','--skip-git-repo-check','-s','read-only','-C',str(work),'-m',cfg['model'],'-c','model_reasoning_effort="'+cfg['reasoning_effort']+'"','-c','features.shell_tool=false','-c','web_search="disabled"','--json','--output-schema',str(schema),'-o',str(output)]+(['-i',str(chart)] if chart else [])+['-']
     env={k:v for k,v in os.environ.items() if k in ['HOME','PATH','USER','LOGNAME','LANG','LC_ALL','SSL_CERT_FILE','SSL_CERT_DIR']}
     env['PATH']='/usr/local/bin:/usr/bin:/bin';env['HOME']='/home/blog'
     started=time.time()
@@ -230,6 +231,9 @@ def process(job):
         if kind=='manual' or (not store.get(key) and not __import__('wave_monitor.cadence',fromlist=['enabled']).enabled()):
             store.enqueue_message(notice(kind,calls,limit,now),reply_id=job['reply_id']);store.put(key,True)
         return 'budget_limited'
+    if job['reason']=='focused_question':
+        from .focused_reply import process_question
+        return process_question(job)
     refresh_for_analysis(job['symbol'])
     snap,raw=snapshot(job['symbol'])
     if time.time()-snap['price']['time']>30:raise RuntimeError('stale_price')
