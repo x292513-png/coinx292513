@@ -273,6 +273,21 @@ async def inbox(request):
                 with store.db() as c:
                     x=c.execute('SELECT symbol FROM analyses WHERE id=?',(ref,)).fetchone()
                     if x:symbols=[x[0]]
+            from .quick_reply import wants_quick,recent_symbol,answer
+            if wants_quick(text):
+                if not symbols:
+                    recent=recent_symbol()
+                    if recent:symbols=[recent]
+                if len(symbols)!=1:
+                    store.enqueue_message('비트와 이더 중 어느 종목인가요? ‘비트 지금 손절 어디?’처럼 보내거나 해당 차트에 답장해 주세요.',reply_id=mid)
+                else:
+                    store.put('conversation_symbol',{'symbol':symbols[0],'time':time.time()})
+                    await answer(symbols[0],ref,text,mid)
+                return web.json_response({'ok':True,'quick_reply':True})
+            if len(symbols)==1:
+                store.put('conversation_symbol',{'symbol':symbols[0],'time':time.time()})
+            else:
+                store.put('conversation_symbol',{})
             if not symbols:symbols=store.settings()['symbols']
             for s in symbols:store.queue(s,'user_followup','manual',text,mid,ref)
             prefix='브리핑도 다시 시작했어요. ' if was_paused else ''
