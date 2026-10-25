@@ -51,6 +51,7 @@ def briefing(now):
     from .trade_plan import plan_summary,format_plan
     from html import escape as e
     lines=['🕐 <b>현재 상황 브리핑</b>\n'+datetime.fromtimestamp(now,KST).strftime('%m/%d %H:%M KST')]
+    chart_refs=[]
     for symbol in store.settings()['symbols']:
         p=store.get('price:'+symbol,{})
         if now-p.get('time',0)>30:
@@ -62,6 +63,7 @@ def briefing(now):
         if span[2]>=58:lines.append(f'최근 1시간 범위 {span[0]:,.2f}–{span[1]:,.2f}')
         a=store.latest(symbol)
         if not a:lines.append('AI 해석 기록 대기');continue
+        chart_refs.append(a['id'])
         r=a['result'];stamp=datetime.fromtimestamp(a['created'],KST).strftime('%m/%d %H:%M')
         # Do not reference an unpublished report: that would cause an extra archive notification.
         from .message_links import existing
@@ -95,6 +97,7 @@ def briefing(now):
     hours=store.settings().get('briefing_hours_kst',[9,21])
     schedule='·'.join(f'{hour:02d}:00' for hour in hours)
     lines += ['',f'정기 브리핑은 하루 2회 ({schedule} KST) · 급변만 별도 알림. AI 해석 시각과 현재 가격 시각은 다를 수 있어요.']
+    store.put('last_briefing_analyses',chart_refs)
     return pack(lines)
 
 def tick(now):
@@ -121,4 +124,7 @@ def tick(now):
         store.put('briefing_ai_slot',refresh)
     slot=briefing_slot(now,cfg)
     if slot and store.get('briefing_sent_slot')!=slot:
-        store.enqueue_message(briefing(now));store.put('briefing_sent_slot',slot)
+        store.enqueue_message(briefing(now))
+        from .chart_delivery import enqueue_charts
+        enqueue_charts(store.get('last_briefing_analyses',[]))
+        store.put('briefing_sent_slot',slot)

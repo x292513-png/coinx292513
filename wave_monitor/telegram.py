@@ -42,5 +42,16 @@ async def send(text, chart=None, reply_id=None, analysis_id=None):
         store.put('telegram_format_verified',{'message_id':msg['message_id'],'entities':sorted({x['type'] for x in msg.get('entities',[])})})
     if chart:
         # Telegram photo dimensions must sum <= 10000; chart renderer fits comfortably.
-        msg=await call('sendPhoto',{'chat_id':r['chat_id'],'message_thread_id':r['topic_id'],'disable_notification':True,'caption':'📊 파동 · FVG/OB · 매물대 · RSI\n확대해서 보세요. 이 차트에 답장해도 분석을 이어갑니다.'},chart);msgs.append(msg['message_id'])
+        caption='📊 파동 · FVG/OB · 매물대 · RSI'
+        if analysis_id:
+            from datetime import datetime,timezone,timedelta
+            with store.db() as c:a=c.execute('SELECT symbol,snapshot,created FROM analyses WHERE id=?',(analysis_id,)).fetchone()
+            if a:
+                snap=json.loads(a['snapshot']);asof=snap.get('asof',a['created'])
+                stamp=datetime.fromtimestamp(asof,timezone(timedelta(hours=9))).strftime('%m/%d %H:%M KST')
+                caption+=f"\n{a['symbol']} · 분석 #{analysis_id}\n차트 기준 {stamp} · 저장된 분석 당시 차트"
+        caption+='\n확대해서 보세요. 사진에 답장하여 해당 분석에 질문할 수 있습니다.'
+        msg=await call('sendPhoto',{**base,'disable_notification':True,'caption':caption},chart)
+        if own and not msgs:remember(own,msg['message_id'])
+        msgs.append(msg['message_id'])
     return msgs

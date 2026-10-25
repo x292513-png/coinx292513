@@ -242,6 +242,9 @@ async def inbox(request):
         # Any interaction in this dedicated topic means the user wants monitoring active again.
         was_paused=store.get('paused',False)
         store.put('paused',False)
+        from .chart_delivery import handle as handle_chart_request
+        if handle_chart_request(text,reply,mid):
+            return web.json_response({'ok':True,'chart_resend':True})
         from .alert_commands import handle as handle_alert_command
         if handle_alert_command(text,mid):
             return web.json_response({'ok':True,'alert_settings':True})

@@ -90,3 +90,9 @@ class CadenceTests(unittest.TestCase):
   a['result']['fractal_evidence']=[]
   with patch.object(store,'latest',return_value=a),patch('wave_monitor.message_links.existing',return_value=None):text=cadence.briefing(now)
   self.assertNotIn('확인된 과거 사례',text)
+
+ def test_scheduled_briefing_attaches_matching_saved_charts(self):
+  store.put('last_briefing_analyses',[123,124])
+  with patch.object(cadence,'briefing',return_value='brief'),patch('wave_monitor.chart_delivery.enqueue_charts') as images:
+   cadence.tick(7201)
+  images.assert_called_once_with([123,124])

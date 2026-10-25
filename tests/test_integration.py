@@ -107,6 +107,16 @@ class InboxTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(store.get('paused'))
         with store.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM jobs').fetchone()[0],0)
 
+    async def test_missing_chart_request_resends_saved_briefing_without_ai(self):
+        chart=store.ROOT/'chart.png';chart.write_bytes(b'test placeholder')
+        with store.db() as c:c.execute('INSERT INTO analyses(id,symbol,chart,snapshot) VALUES (?,?,?,?)',(99,'ETHUSDT',str(chart),'{}'))
+        store.put('last_briefing_analyses',[99])
+        response=await self.client.post('/inbox',json=dict(user_id=10,chat_id=-100,topic_id=50,message_id=91,text='사진은왜 안줘?'),headers={'X-Wave-Key':'test-secret'})
+        self.assertTrue((await response.json())['chart_resend'])
+        with store.db() as c:
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM jobs').fetchone()[0],0)
+            self.assertEqual(tuple(c.execute('SELECT text,chart,analysis_id,reply_id FROM outbox').fetchone()),('',str(chart),99,91))
+
 
 class BridgeTests(unittest.IsolatedAsyncioTestCase):
     async def test_unrelated_topic_keeps_original_handler(self):
