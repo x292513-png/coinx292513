@@ -49,6 +49,10 @@ def short_answer(analysis, price, now, question):
     risk=abs(current-stop);rr=abs(tp-current)/risk
     inside=plan['entry_low']<=current<=plan['entry_high']
     verdict='현재가는 기존 진입 구간 안입니다. 아래 진입 조건 충족은 별도 확인해야 합니다.' if inside else '현재가는 기존 진입 구간 밖입니다. 지금 추격 진입은 대기 판단입니다.'
+    position=plan.get('position_plan')
+    if position:
+        from .allocation import TF
+        verdict+='\n기존 계획 기준: 판단 '+TF[position['thesis_timeframe']]+' · 진입 확인 '+TF[position['entry_timeframe']]+' · 손절 구조 '+TF[position['stop_timeframe']]
     return '\n\n'.join([f'⛔ <b>{side} 손절 기준 {stop:,.2f}</b>\n실시간 가격 이탈 기준 · 기존 분석 #{analysis["id"]}',head,
         f'지금 가격에 진입한다고 가정하면 손절까지 <b>{risk/current*100:.2f}%</b>\n1차 익절 {tp:,.2f} · 손익비 {rr:.2f}R (비용 전)',
         verdict+'\n기존 진입 구간 '+f"{plan['entry_low']:,.2f}–{plan['entry_high']:,.2f}",

@@ -6,12 +6,14 @@ def plan_summary(result):
     from html import escape
     p=result.get('trade_plan')
     if not p:return ''
-    if not p.get('enabled'):return '🕰 <b>진입 대기</b>\n'+escape(p.get('reason','현재 진입 조건 확인 중'))
+    from .allocation import summary
+    context=summary(result)
+    if not p.get('enabled'):return '🕰 <b>진입 대기</b>\n'+escape(p.get('reason','현재 진입 조건 확인 중'))+('\n\n'+escape(context) if context else '')
     validate(p,result['bias'])
     preferred=p.get('entry_preferred')
     entry=f'{preferred:,.2f}' if preferred is not None else f"{p['entry_low']:,.2f}–{p['entry_high']:,.2f}"
     side='롱' if result['bias']=='bullish' else '숏'
-    return '\n\n'.join([
+    return '\n\n'.join(([escape(context)] if context else [])+[
         f'📌 <b>{side} 진입 기준 · {entry}</b>\n허용 구간 {p["entry_low"]:,.2f}–{p["entry_high"]:,.2f}\n조건 확인 후 진입 · 아래 진입 순서 참고',
         f'⛔ <b>최초 손절 · {p["stop"]:,.2f}</b>',
         f'🎯 <b>1차 익절 · {p["tp1"]:,.2f}</b>\n{p["take_pct"]}% 정리',
@@ -61,4 +63,7 @@ def format_plan(result,compact=False):
     if not compact:
         for label,key in [('내가 이 자리를 선택한 이유','reason'),('진입선 근거','entry_reason'),('손절선 근거','stop_reason'),('1차 익절 근거','tp1_reason')]:
             if p.get(key):lines.extend(['',label+'\n'+p[key][:600]])
+    from .allocation import detail
+    allocation=detail(result)
+    if allocation:lines.extend(['',allocation])
     return '\n\n'.join(lines)

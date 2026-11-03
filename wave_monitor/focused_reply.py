@@ -79,7 +79,8 @@ def process_question(job):
     schema=obj({'verdict':S,'evidence':S,'conditions':S,'entry_stop':S,'evidence_ids':ARRAY({'type':'string','enum':list(context['evidence'])})})
     with store.db() as c:
         call=c.execute('INSERT INTO calls(started,kind,job_id) VALUES (?,?,?)',(time.time(),'manual',job['id'])).lastrowid
-    result,usage,latency=run_codex(PROMPT+'\n입력:\n'+json.dumps(context,ensure_ascii=False,separators=(',',':')),None,job['id'],[],[],custom_schema=schema)
+    allocation_instruction='비중·물타기·기준봉 질문이면 previous_analysis.trade_plan.position_plan의 기준봉, 100유닛·1배 금액 가정, 최초/추가 조건과 계산된 총 손실을 참조한다. 현재 구조가 달라지면 기존 비중 재사용을 보류한다. 근거 없는 새 비중이나 검증된 승률을 만들지 않는다.'
+    result,usage,latency=run_codex(PROMPT+'\n'+allocation_instruction+'\n입력:\n'+json.dumps(context,ensure_ascii=False,separators=(',',':')),None,job['id'],[],[],custom_schema=schema)
     jsonschema.validate(result,schema)
     if not result['evidence_ids'] or sum(len(result[k]) for k in ['verdict','evidence','conditions','entry_stop'])>2400:raise ValueError('invalid_focused_answer')
     stamp=datetime.fromtimestamp(context['asof'],timezone(timedelta(hours=9))).strftime('%m/%d %H:%M:%S KST')

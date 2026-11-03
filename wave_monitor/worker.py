@@ -22,13 +22,17 @@ def enum(*values):return {'type':'string','enum':list(values)}
 S={'type':'string'}
 N={'type':'number'}
 ARRAY=lambda item:{'type':'array','items':item}
+POSITION_SCHEMA=obj({'thesis_timeframe':enum('1d','4h','1h','15m','5m','1m'),'entry_timeframe':enum('1d','4h','1h','15m','5m','1m'),'stop_timeframe':enum('1d','4h','1h','15m','5m','1m'),'alignment_reason':S,'allocation_reason':S,'initial_units':N,'add_units':N,'add_price':{'type':['number','null']},'add_condition':S,'cancel_add_condition':S,'risk_budget_units':N})
+POSITION_PROMPT='''포지션 계획: trade_plan.position_plan에는 큰 판단 기준봉/실제 진입 확인봉/손절 구조 기준봉을 각각 명시한다. 단기 역추세, 추세순응 눌림, 상위 추세 속 하위 반등 종료 확인을 구분해 alignment_reason에 설명한다. allocation_reason에는 비중을 택한 질적 이유만 적고 숫자를 쓰지 않는다. 평균가·유닛·손실 계산은 프로그램이 출력한다.
+총자금 100유닛, 1배 상당 포지션 금액으로 최초/추가/예비 비중을 제시한다. 증거 강도는 검증된 승률이 아니며 confidence=70을 70% 승률이나 70유닛으로 변환하지 않는다. 4개 기준봉 일치 시 최대 100유닛·손실예산1, 혼재 최대50·0.75, 일봉/4h 모두 역방향이면 최대30·0.5라는 운영 규칙 안에서 자신의 선택과 이유를 말한다. 왕복 수수료·슬리피지 합계 가정 0.20% 포함 총위험을 고려한다.
+추가 진입은 선택사항이며 없으면 add_units=0,add_price=null. 있으면 진입 이후 불리한 되돌림 가격이지만 기존 손절 안쪽의 실제 구조 근거가 있어야 하고, add_condition에 그 가격에서 확인할 구조·관리봉을 적는다. 단순 하락만으로 물타기하지 않는다. cancel_add_condition에는 무효화/시간 만료/구조 붕괴를 적는다. 스탑은 추가 체결에도 고정이며 총 손실예산을 넘기지 않는다. 보유 예상 기간과 재검토 시한도 매매 차수와 일치해야 한다. 대기 계획은 비중0. 다른 본문 필드에 유닛 수치를 중복 쓰지 말고 position_plan에만 기록한다(프로그램이 위험 한도에 맞춰 축소할 수 있다).'''
 SCHEMA=obj({
     'symbol':enum('BTCUSDT','ETHUSDT'),
     'headline':S,'bias':enum('bullish','bearish','neutral'),
     'state':enum('trend_impulse','correction_ongoing','correction_end_candidate','entry_structure_confirmed','ending_candidate','leading_candidate','triangle_ongoing','unclear'),
     'confidence':{'type':'integer','minimum':0,'maximum':100},
     'thesis':S,'alternative':S,'changed_since_previous':S,
-    'trade_plan':obj({'enabled':{'type':'boolean'},'reason':S,**{k:{'type':['number','null']} for k in ['entry_low','entry_high','entry_preferred','stop','tp1','tp2','holding_invalidation']},'take_pct':{'type':'integer','minimum':0,'maximum':100},'entry_rule':S,'entry_reason':S,'stop_reason':S,'tp1_reason':S,'breakeven_rule':S,'hold_rule':S,'holding_timeframe':enum('15m','1h','4h','1d','none'),'holding_exit_rule':S,'review_rule':S,'expected_horizon':S}),
+    'trade_plan':obj({'enabled':{'type':'boolean'},'reason':S,**{k:{'type':['number','null']} for k in ['entry_low','entry_high','entry_preferred','stop','tp1','tp2','holding_invalidation']},'take_pct':{'type':'integer','minimum':0,'maximum':100},'entry_rule':S,'entry_reason':S,'stop_reason':S,'tp1_reason':S,'breakeven_rule':S,'hold_rule':S,'holding_timeframe':enum('15m','1h','4h','1d','none'),'holding_exit_rule':S,'review_rule':S,'expected_horizon':S,'position_plan':POSITION_SCHEMA}),
     'frames':ARRAY(obj({'tf':enum('1w','1d','4h','1h','15m','5m','1m'),'count':S,'evidence':S,'status':enum('developing','confirmed_structure','unclear','standby')})),
     'wave_view':ARRAY(obj({'tf':enum('1d','4h','1h','15m'),'trend':enum('상승','하락','횡보','불명확'),'count':S,'weights':obj({k:{'type':'integer','minimum':0,'maximum':100} for k in ['impulse','abc','wxy','triangle','unclear']}),'evidence':S})),
     'book_rule_ids':{'type':'array','items':S,'maxItems':4},'book_comment':S,
@@ -87,6 +91,8 @@ def validate_result(result,snap,raw):
     result['book_sources']=citations(result['book_rule_ids']) if result['book_rule_ids'] else []
     from .trade_plan import validate as validate_plan
     validate_plan(result['trade_plan'],result['bias'])
+    from .allocation import prepare
+    prepare(result)
     if result['symbol']!=snap['symbol']:raise ValueError('wrong_symbol')
     if sorted(x['tf'] for x in result['frames'])!=sorted(raw):raise ValueError('missing_or_duplicate_timeframes')
     if not result['wave_labels']:raise ValueError('missing_wave_labels')
@@ -271,7 +277,7 @@ def process(job):
     charts=store.ROOT/'data/charts';charts.mkdir(exist_ok=True)
     chart=charts/f"{job['symbol']}-{job['id']}.png"
     render(snap,raw,chart)
-    prompt=PROMPT+'\n입력 데이터:\n'+json.dumps(compact_input(snap),ensure_ascii=False,separators=(',',':'))
+    prompt=PROMPT+'\n'+POSITION_PROMPT+'\n입력 데이터:\n'+json.dumps(compact_input(snap),ensure_ascii=False,separators=(',',':'))
     with store.db() as c:
         call_id=c.execute('INSERT INTO calls(started,kind,job_id) VALUES (?,?,?)',(now,kind,job['id'])).lastrowid
     ict_ids=[z['id'] for f in snap['frames'].values() for z in f['ict']['active']]
