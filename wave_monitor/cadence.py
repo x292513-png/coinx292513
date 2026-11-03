@@ -43,7 +43,17 @@ def sharp_candidate(moves,rules):
     return max(hits,key=lambda x:abs(x[1])) if hits else None
 
 def can_alert(previous,now,change,cooldown):
-    return not previous or now-previous['time']>=cooldown or change*previous['change']<0 or abs(change)>=abs(previous['change'])+1
+    return not previous or now-previous['time']>=cooldown or change*previous['change']<0 or int(abs(change))>int(abs(previous['change']))
+
+def rolling_drop(symbol,price,now):
+    # Exclude the partially overlapping oldest minute: high must be inside 5 minutes.
+    with store.db() as c:
+        row=c.execute("SELECT MAX(h) FROM candles WHERE symbol=? AND tf='1m' AND t>=? AND t<=?",(symbol,(now-300)*1000,now*1000)).fetchone()
+    recent=[p for p in store.get('rolling_prices:'+symbol,[]) if now-300<=p['time']<=now]
+    recent.append({'time':now,'price':price});store.put('rolling_prices:'+symbol,recent)
+    peak=max([p['price'] for p in recent]+([row[0]] if row and row[0] else []))
+    return (price/peak-1)*100 if peak>0 else 0
+
 
 def briefing(now):
     from .engine import is_invalid
@@ -94,6 +104,8 @@ def briefing(now):
         if r.get('invalidation_price'):
             side='하회' if r['invalidation_side']=='below' else '상회'
             lines.append(f"관점 철회: {r['invalidation_price']:,.2f} {side}")
+    from .news import blocks as news_blocks
+    lines+=news_blocks(now)
     hours=store.settings().get('briefing_hours_kst',[9,21])
     schedule='·'.join(f'{hour:02d}:00' for hour in hours)
     lines += ['',f'정기 브리핑은 하루 2회 ({schedule} KST) · 급변만 별도 알림. AI 해석 시각과 현재 가격 시각은 다를 수 있어요.']
@@ -107,13 +119,24 @@ def tick(now):
         p=store.get('price:'+symbol,{})
         if now-p.get('time',0)>30:continue
         moves=changes(symbol,p['price'],now)
+        drop_sent=False
+        if symbol=='ETHUSDT':
+            drop=rolling_drop(symbol,p['price'],now)
+            previous=store.get('eth_5m_dump')
+            if drop<=-2 and can_alert(previous,now,drop,cfg['sharp_alert_cooldown_seconds']):
+                store.enqueue_message(f"🚨 ETH 급락 · 최근 5분 이내 고점 대비 {drop:+.2f}%\n현재 {p['price']:,.2f}\n{'3% 급락 단계 진입' if drop<=-3 else '2% 급락 단계 진입'} · 가격 감지 알림, 새 파동 분석 아님")
+                store.put('eth_5m_dump',{'time':now,'change':drop});drop_sent=True
         from .alert_commands import rules_for
         hit=sharp_candidate(moves,rules_for(symbol))
         if hit:
             minutes,change=hit;previous=store.get('sharp_alert:'+symbol)
-            if can_alert(previous,now,change,cfg['sharp_alert_cooldown_seconds']):
+            if not drop_sent and not (symbol=='ETHUSDT' and minutes==5 and change<0) and can_alert(previous,now,change,cfg['sharp_alert_cooldown_seconds']):
                 store.enqueue_message(f"🚨 {symbol} 급변 · {minutes}분 {change:+.2f}%\n현재 {p['price']:,.2f}\n실시간 가격 기준 알림입니다. AI의 새 파동 판단은 아직 확인되지 않았습니다.")
                 store.put('sharp_alert:'+symbol,{'time':now,'change':change})
+    # Fetch news ten minutes before briefing, ahead of expensive chart analysis.
+    news_slot=refresh_slot(now+300,cfg)
+    if cfg.get('news_enabled',False) and news_slot and store.get('briefing_news_slot')!=news_slot:
+        store.queue('MARKET','news_briefing',kind='news');store.put('briefing_news_slot',news_slot)
     # Refresh silently five minutes before a scheduled briefing.
     refresh=refresh_slot(now,cfg)
     if refresh and store.get('briefing_ai_slot')!=refresh:

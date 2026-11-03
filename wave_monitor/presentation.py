@@ -74,6 +74,8 @@ def format_analysis(r,snap,aid,reason):
             detail+=f"\n\n현재 {f['query_tf']} ↔ 과거 {f['source_tf']} {f['window_bars']}봉 ({'선물' if f['market']=='futures' else '현물'})\n{stamp(f['start'])} ~ {stamp(f['end'])}\n당시 이후 {f['horizon_bars']}봉 종가 변화 {f['return_pct']:+.3f}% · 모양 거리 {f['distance']:.3f}"
         blocks+=quoted('🔁 다른 시간봉에서 찾은 프랙탈',detail)
     blocks.append(f'<a href="https://www.binance.com/en/futures/{e(r["symbol"])}">바이낸스 차트</a> · <a href="https://www.tradingview.com/chart/?symbol=BINANCE%3A{e(r["symbol"])}.P">TradingView</a>\n이 알림에 답장하면 이어서 분석해요.')
+    from .news import blocks as news_blocks
+    blocks+=news_blocks(__import__('time').time())
     return pack(blocks)
 
 

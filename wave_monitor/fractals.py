@@ -232,16 +232,22 @@ def match_context(symbol,raw,asof,focus_1m=False):
                 valid=np.isfinite(dist) & (dist<=MAX_DISTANCE) & (m['known']<min(q['start'],asof*1000))
                 ids=np.flatnonzero(valid)
                 if not len(ids):continue
-                best=ids[np.argsort(dist[ids])[:12]]
+                cutoff=(asof-365*86400)*1000
+                best=np.concatenate([bucket[np.argsort(dist[bucket])[:12]] for bucket in (ids[m['end'][ids]>=cutoff],ids[m['end'][ids]<cutoff])])
                 for j in best:
                     q['matches'].append({'id':f"{tf}:{d['market']}:{d['tf']}:{d['window']}:{int(m[j]['start'])}",'source_tf':d['tf'],'source_construction':d.get('construction','exchange native'),'market':d['market'],'window_bars':d['window'],'horizon_bars':d['horizon'],'start':int(m[j]['start']),'end':int(m[j]['end']),'known':int(m[j]['known']),'distance':round(float(dist[j]),4),'return_pct':round(float(m[j]['return_pct']),3),'max_close_return_pct':round(float(m[j]['max_pct']),3),'min_close_return_pct':round(float(m[j]['min_pct']),3)})
             # Keep a bounded candidate pool, with temporal diversity before truncation.
         del fa,ma
-        for q in queries.values():q['matches']=diverse_nearest(q['matches'],40)
+        for q in queries.values():
+            cutoff=(asof-365*86400)*1000
+            q['matches']=diverse_nearest([e for e in q['matches'] if e['end']>=cutoff],20)+diverse_nearest([e for e in q['matches'] if e['end']<cutoff],20)
     out={'status':'ready' if asof-index['updated_at']<3*3600 else 'stale','updated_at':index['updated_at'],'scanned_windows':index['total_windows'],'queries':{},'interpretation':'RMS shape distance, not odds. Cross-TF only; calendar overlaps removed; horizons measured in source bars. No mirrored patterns.'}
     for tf,q in queries.items():
-        picks=diverse_nearest(q['matches'],6)
-        out['queries'][tf]={'query_start':q['start'],'query_end':q['end'],'query_window_bars':q['window'],'n':len(picks),'examples':picks[:3],'small_sample':len(picks)<20}
+        cutoff=(asof-365*86400)*1000
+        recent=diverse_nearest([e for e in q['matches'] if e['end']>=cutoff],3)
+        older=diverse_nearest([e for e in q['matches'] if e['end']<cutoff],3)
+        picks=recent+[e for e in older if all(e['known']<p['start'] or e['start']>p['known'] for p in recent)]
+        out['queries'][tf]={'query_start':q['start'],'query_end':q['end'],'query_window_bars':q['window'],'n':len(picks),'examples':picks,'period_comparison':{name:{'n':len(items),'median_followthrough_pct':round(float(np.median([e['return_pct'] for e in items])),3) if items else None} for name,items in [('recent_365d',recent),('before_365d',[e for e in picks if e['end']<cutoff])]},'small_sample':len(picks)<20}
     kp=store.ROOT/'data/knowledge/fractal-knowledge.json'
     if kp.exists():
         knowledge=json.loads(kp.read_text()).get('symbols',{}).get(symbol,{})

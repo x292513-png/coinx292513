@@ -13,7 +13,10 @@ from .freshness import refresh_for_analysis
 
 def is_full_request(text):
     q=''.join(text.lower().split()).strip('?.!')
+    if re.search(r'분석해.*(사진|차트)|(사진|차트).*분석해',q):return True
     if any(t in q for t in ['전체분석','다시분석','새로분석','종합분석','탑다운분석']):return True
+    if not re.search(r'손절|익절|진입|다이버|rsi|fvg|ob|몇파|[1-5]파|전저점|전고점',q):
+        if re.search(r'어떻게(보고있|보|봐)|전망|현재상황|현재흐름',q):return True
     q=re.sub(r'비트코인|이더리움|비트|이더|btcusdt|ethusdt|btc|eth|하고|그리고|랑|와|과|,|/|·','',q)
     return bool(re.fullmatch(r'(지금|현재|기준으로|기준|차트)*(분석|분석해줘|분석해|분석해주세요|분석부탁해|분석부탁드립니다)',q))
 

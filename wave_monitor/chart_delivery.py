@@ -17,6 +17,8 @@ def enqueue_charts(ids,reply_id=None):
 
 
 def handle(text,reply,mid):
+    from .focused_reply import is_full_request
+    if is_full_request(text):return False
     q=''.join(text.lower().split())
     if not (any(x in q for x in ['사진','이미지','그림']) and any(x in q for x in ['줘','보내','없','왜','다시','주세요'])):return False
     symbols=[]

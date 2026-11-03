@@ -141,12 +141,27 @@ def stats(samples,now_ms):
     result={}
     for kind in sorted({s['kind'] for s in samples}):
         groups={}
-        for label,days,older in [('recent_90d',90,False),('recent_365d',365,False),('before_90d',90,True),('all',None,False)]:
+        for label,days,older in [('recent_90d',90,False),('recent_365d',365,False),('before_90d',90,True),('before_365d',365,True),('all',None,False)]:
             ss=[s for s in samples if s['kind']==kind and s['known_until']<=now_ms and (days is None or ((s['t']<now_ms-days*86400000) if older else (s['t']>=now_ms-days*86400000)))]
             counts=dict(Counter(x['outcome'] for x in ss))
             groups[label]={'n':len(ss),'counts':counts,'continued_before_CE':sum(bool(x.get('continued_before_CE')) for x in ss),'small_sample':len(ss)<20}
         result[kind]=groups
     return result
+
+
+def period_stats(groups):
+    """Compatible with old summaries; disjoint periods, descriptive outcome fractions."""
+    import copy
+    groups=copy.deepcopy(groups)
+    for buckets in groups.values():
+        recent=buckets.get('recent_365d',{});total=buckets.get('all',{})
+        if 'before_365d' not in buckets:
+            n=max(0,total.get('n',0)-recent.get('n',0))
+            buckets['before_365d']={'n':n,'small_sample':n<20,'counts':{k:max(0,v-recent.get('counts',{}).get(k,0)) for k,v in total.get('counts',{}).items()}}
+        for key in ('recent_365d','before_365d'):
+            b=buckets.get(key,{})
+            b['outcome_fractions']={k:round(v/b['n'],3) for k,v in b.get('counts',{}).items()} if b.get('n') else {}
+    return groups
 
 
 def analogs(rows,query,horizon,asof_ms,limit=12):
@@ -203,7 +218,7 @@ def context(symbol,raw,asof):
             if not meta:continue
             rows=history(market,symbol,tf)
             query=raw.get(tf) if market=='futures' and tf in raw else rows[-32:]
-            sources[market]={'coverage':{k:meta[k] for k in ['bars','first','last_closed','gaps']},'patterns':meta['stats'] if market=='futures' else {},'analogs':analogs(rows,query,HORIZONS[tf],int(asof*1000)), 'monthly_context':meta['monthly_context']}
+            sources[market]={'coverage':{k:meta[k] for k in ['bars','first','last_closed','gaps']},'patterns':period_stats(meta['stats']) if market=='futures' else {},'analogs':analogs(rows,query,HORIZONS[tf],int(asof*1000)), 'monthly_context':meta['monthly_context']}
         out['frames'][tf]=sources
     # Feed back actual published thesis outcomes, retaining small samples and ambiguous paths.
     with store.db() as c:

@@ -22,6 +22,12 @@ class InboxTests(unittest.IsolatedAsyncioTestCase):
         self.client=TestClient(TestServer(app));await self.client.start_server()
     async def asyncTearDown(self):
         await self.client.close();store.ROOT=self.old;self.tmp.cleanup()
+    async def test_natural_eth_outlook_is_full_eth_only(self):
+        r=await self.client.post('/inbox',json=dict(user_id=10,chat_id=-100,topic_id=50,message_id=27,text='지금 현재 이더리움 어떻게 보고 있는지'),headers={'X-Wave-Key':'test-secret'})
+        self.assertEqual(r.status,200)
+        with store.db() as c:rows=c.execute('SELECT symbol,reason FROM jobs').fetchall()
+        self.assertEqual([(r['symbol'],r['reason']) for r in rows],[('ETHUSDT','user_followup')])
+
     async def test_auth_and_unrelated_topics_are_rejected(self):
         payload=dict(user_id=10,chat_id=-100,topic_id=50,message_id=1,text='BTC 분석')
         r=await self.client.post('/inbox',json=payload);self.assertEqual(r.status,403)

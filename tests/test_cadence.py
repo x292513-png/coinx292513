@@ -16,6 +16,24 @@ class CadenceTests(unittest.TestCase):
   self.assertFalse(cadence.can_alert(old,110,2.2,1800))
   self.assertTrue(cadence.can_alert(old,110,3.2,1800))
   self.assertTrue(cadence.can_alert(old,110,-2,1800))
+ def test_eth_peak_drop_does_not_need_ai_and_escalates_at_three(self):
+  self.cfg['symbols']=['ETHUSDT']
+  store.put('briefing_sent_slot',cadence.briefing_slot(7201,self.cfg))
+  with patch.object(cadence,'changes',return_value={5:-2.7}),patch.object(cadence,'rolling_drop',side_effect=[-2.7,-2.9,-3.0]):
+   for now in [7201,7206,7211]:
+    store.put('price:ETHUSDT',{'price':97,'time':now});cadence.tick(now)
+  with store.db() as c:
+   self.assertEqual(c.execute('SELECT COUNT(*) FROM outbox').fetchone()[0],2)
+   self.assertEqual(c.execute('SELECT COUNT(*) FROM calls').fetchone()[0],0)
+
+ def test_news_refresh_separate_budget_once_before_briefing(self):
+  self.cfg.update(notification_mode='twice_daily',briefing_hours_kst=[9,21],news_enabled=True)
+  now=datetime(2026,11,3,8,50,tzinfo=timezone(timedelta(hours=9))).timestamp()
+  cadence.tick(now);cadence.tick(now+5)
+  with store.db() as c:
+   rows=c.execute('SELECT kind,reason FROM jobs').fetchall()
+  self.assertEqual([(r['kind'],r['reason']) for r in rows],[('news','news_briefing')])
+
  def test_hourly_brief_once_and_works_without_ai(self):
   store.put('hourly_brief_slot',1)
   with patch.object(cadence,'briefing',return_value='brief'):
