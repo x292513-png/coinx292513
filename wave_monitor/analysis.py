@@ -160,6 +160,8 @@ def snapshot(symbol):
     snap={'symbol':symbol,'asof':now,'price':price,'frames':frames,'profiles':profiles,'previous':{'id':previous['id'],'created':previous['created'],'result':previous['result']} if previous else None,'rules':'엘리어트 파동 우선: 일봉→4h→1h→15m. 주봉은 배경, 5m/1m은 진입 보조. 지지저항/FVG/OB는 파동 시나리오의 타점 확인용. 일반 캔들/바이낸스 USDT 무기한 체결가격. 마크가격 아님. 시간 UTC ms, 표시는 KST. WXY는 ABC와 동일한 내부 규칙을 강제하지 않음.'}
     from .ict import confluences
     snap['confluences']=confluences(frames,profiles,price['price'])
+    from .entry_context import measured_levels
+    snap['entry_measurements']=measured_levels(snap,raw)
     return snap,raw
 
 

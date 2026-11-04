@@ -53,6 +53,8 @@ def format_analysis(r,snap,aid,reason):
     invalid=f"{r['invalidation_price']:,.2f} {'하회' if r['invalidation_side']=='below' else '상회'}" if r['invalidation_price'] else '방향 확인 전'
     blocks.append('✅ <b>확인 조건</b>\n'+e(r['confirmation_rule'][:260])+'\n\n⛔ <b>무효화 · '+invalid+'</b> (실시간 가격)\n🎯 목표 후보 '+(', '.join(f'{v:,.2f}' for v in r['targets']) or '미지정'))
     from .trade_plan import format_plan,plan_summary
+    from .entry_context import display
+    blocks+=display(r)
     plan=plan_summary(r)
     if plan:
         blocks.append(plan)

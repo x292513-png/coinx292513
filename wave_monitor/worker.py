@@ -23,6 +23,9 @@ S={'type':'string'}
 N={'type':'number'}
 ARRAY=lambda item:{'type':'array','items':item}
 POSITION_SCHEMA=obj({'thesis_timeframe':enum('1d','4h','1h','15m','5m','1m'),'entry_timeframe':enum('1d','4h','1h','15m','5m','1m'),'stop_timeframe':enum('1d','4h','1h','15m','5m','1m'),'alignment_reason':S,'allocation_reason':S,'initial_units':N,'add_units':N,'add_price':{'type':['number','null']},'add_condition':S,'cancel_add_condition':S,'risk_budget_units':N})
+ENTRY_PROMPT='''진입 판단은 파동 이름 하나의 정답보다 여러 유효 시나리오의 공통 경로를 먼저 찾는다. 예: 단순 ABC 전체 종료와 큰 W 종료 후 X 반등이 같은 저점 유지/반전 확인에서 함께 롱을 지지할 수 있다. entry_logic.shared_path에 이를 설명하고 supporting_scenarios에 실제 성립 가능한 후보만 적는다. 각 후보에서 같은 진입이 유효한 이유와 익절/잔량 홀딩이 갈라지는 조건을 적는다. 억지로 두 후보를 만들지 않는다. 세 후보 중 두 개가 같은 방향이라는 이유로 2/3 승률을 부여하거나 확신도를 올리지 않는다. 후보들은 서로 독립된 사건이 아니다.
+entry_logic.confluence에는 진입 가격대에서 중첩되는 실제 근거를 가격·기준봉과 함께 설명한다. 파동상 위치, 명시한 기점의 피보나치, 실제 종류/기간의 이평, 지지저항·FVG·OB·매물대, 반전 확인을 구분한다. 같은 가격에서 나온 FVG/OB/파동 피벗을 독립 증거 세 개처럼 계산하지 않는다. 근거가 약하거나 가격이 아직 확인되지 않았으면 조건부 진입 또는 대기다. 임의로 0.618/200일선 접촉을 꾸미지 않는다. entry_measurements의 SMA는 확정봉 단순이평이며 EMA가 아니다. 피보나치 후보는 고저점·시각·비율을 확인하고 차수 선택 이유를 적어라. 실제 인용한 측정 ID만 measurement_ids에 선택한다. 접촉 여부와 반전 확인 여부는 별개다.
+entry_logic.trigger에는 공통으로 필요한 진입 확인 조건, failure_case에는 C 미완료/하락 연장 등 반대 가설과 롱·숏 공통 진입이 깨지는 가격/구조를 적는다. 큰 조정 종료 미확인이라도 단기 반등 거래는 가능하되 그 목표를 큰 상승 재개의 목표와 혼동하지 않는다. 하위 ABC 종료를 상위 전체 조정 종료로 자동 승격하지 말고 차수를 명시한다.'''
 POSITION_PROMPT='''포지션 계획: trade_plan.position_plan에는 큰 판단 기준봉/실제 진입 확인봉/손절 구조 기준봉을 각각 명시한다. 단기 역추세, 추세순응 눌림, 상위 추세 속 하위 반등 종료 확인을 구분해 alignment_reason에 설명한다. allocation_reason에는 비중을 택한 질적 이유만 적고 숫자를 쓰지 않는다. 평균가·유닛·손실 계산은 프로그램이 출력한다.
 총자금 100유닛, 1배 상당 포지션 금액으로 최초/추가/예비 비중을 제시한다. 증거 강도는 검증된 승률이 아니며 confidence=70을 70% 승률이나 70유닛으로 변환하지 않는다. 4개 기준봉 일치 시 최대 100유닛·손실예산1, 혼재 최대50·0.75, 일봉/4h 모두 역방향이면 최대30·0.5라는 운영 규칙 안에서 자신의 선택과 이유를 말한다. 왕복 수수료·슬리피지 합계 가정 0.20% 포함 총위험을 고려한다.
 추가 진입은 선택사항이며 없으면 add_units=0,add_price=null. 있으면 진입 이후 불리한 되돌림 가격이지만 기존 손절 안쪽의 실제 구조 근거가 있어야 하고, add_condition에 그 가격에서 확인할 구조·관리봉을 적는다. 단순 하락만으로 물타기하지 않는다. cancel_add_condition에는 무효화/시간 만료/구조 붕괴를 적는다. 스탑은 추가 체결에도 고정이며 총 손실예산을 넘기지 않는다. 보유 예상 기간과 재검토 시한도 매매 차수와 일치해야 한다. 대기 계획은 비중0. 다른 본문 필드에 유닛 수치를 중복 쓰지 말고 position_plan에만 기록한다(프로그램이 위험 한도에 맞춰 축소할 수 있다).'''
@@ -41,7 +44,8 @@ SCHEMA=obj({
     'confirmation_price':{'type':['number','null']},'confirmation_rule':S,
     'targets':ARRAY(N),'rsi_comment':S,'volume_comment':S,'ict_comment':S,'ict_watch_ids':ARRAY(S),
     'wave_labels':ARRAY(obj({'pivot_id':S,'label':S})),
-    'answer_to_user':S,'next_watch':S,'learning_comment':S,'fractal_comment':S,'fractal_example_ids':ARRAY(S)
+    'answer_to_user':S,'next_watch':S,'learning_comment':S,'fractal_comment':S,'fractal_example_ids':ARRAY(S),
+    'entry_logic':obj({'shared_path':S,'supporting_scenarios':{'type':'array','maxItems':3,'items':obj({'scenario':S,'why_same_entry':S,'exit_difference':S})},'confluence':S,'trigger':S,'failure_case':S,'measurement_ids':{'type':'array','maxItems':4,'items':S}})
 })
 
 PROMPT='''당신은 사용자의 바이낸스 USDT 무기한 선물 차트 분석 파트너다. 반드시 엘리어트 파동을 1차 분석 틀로 삼고 일봉→4시간→1시간→15분 순서로 탑다운 판단한다. 주봉은 배경이고 5분·1분은 진입 보조다. 상위 하락도 임펄스인지 상승 추세 안의 조정인지 먼저 구분한다. 지지저항·FVG·OB·매물대·RSI는 파동 시나리오와 진입 타점을 검증하는 보조 근거다.
@@ -85,6 +89,9 @@ PROMPT='''당신은 사용자의 바이낸스 USDT 무기한 선물 차트 분�
 def validate_result(result,snap,raw):
     jsonschema.validate(result,SCHEMA)
     validate_wave_view(result['wave_view'])
+    measured={x['id']:x for x in snap.get('entry_measurements',{}).get('levels',[])}
+    if any(i not in measured for i in result['entry_logic']['measurement_ids']):raise ValueError('ungrounded_entry_measurement')
+    result['entry_logic']['measured_evidence']=[measured[i] for i in dict.fromkeys(result['entry_logic']['measurement_ids'])]
     from .book_rules import citations
     available={r['id'] for r in snap.get('book_knowledge',{}).get('rules',[])}
     if any(i not in available for i in result['book_rule_ids']):raise ValueError('book_rule_not_in_input')
@@ -160,7 +167,7 @@ def compact_input(snap):
     return out
 
 
-def run_codex(prompt,chart,job_id,anchors,ict_ids,fractal_ids=None,custom_schema=None):
+def run_codex(prompt,chart,job_id,anchors,ict_ids,fractal_ids=None,custom_schema=None,measurement_ids=None):
     cfg=store.settings();work=store.ROOT/'data/ai';work.mkdir(exist_ok=True)
     stem=work/(str(job_id)+'-'+uuid.uuid4().hex[:8]);schema=stem.with_suffix('.schema.json')
     schema_data=json.loads(json.dumps(custom_schema or SCHEMA))
@@ -171,6 +178,8 @@ def run_codex(prompt,chart,job_id,anchors,ict_ids,fractal_ids=None,custom_schema
         schema_data['properties']['fractal_example_ids']['maxItems']=2
         if fractal_ids:schema_data['properties']['fractal_example_ids']['items']['enum']=fractal_ids
         else:schema_data['properties']['fractal_example_ids']['maxItems']=0
+        if measurement_ids:schema_data['properties']['entry_logic']['properties']['measurement_ids']['items']['enum']=measurement_ids
+        else:schema_data['properties']['entry_logic']['properties']['measurement_ids']['maxItems']=0
     schema.write_text(json.dumps(schema_data))
     output=stem.with_suffix('.json')
     cmd=[cfg.get('codex_binary','/usr/bin/codex'),'exec','--ignore-user-config','--ignore-rules','--ephemeral','--skip-git-repo-check','-s','read-only','-C',str(work),'-m',cfg['model'],'-c','model_reasoning_effort="'+cfg['reasoning_effort']+'"','-c','features.shell_tool=false','-c','web_search="disabled"','--json','--output-schema',str(schema),'-o',str(output)]+(['-i',str(chart)] if chart else [])+['-']
@@ -277,12 +286,12 @@ def process(job):
     charts=store.ROOT/'data/charts';charts.mkdir(exist_ok=True)
     chart=charts/f"{job['symbol']}-{job['id']}.png"
     render(snap,raw,chart)
-    prompt=PROMPT+'\n'+POSITION_PROMPT+'\n입력 데이터:\n'+json.dumps(compact_input(snap),ensure_ascii=False,separators=(',',':'))
+    prompt=PROMPT+'\n'+POSITION_PROMPT+'\n'+ENTRY_PROMPT+'\n입력 데이터:\n'+json.dumps(compact_input(snap),ensure_ascii=False,separators=(',',':'))
     with store.db() as c:
         call_id=c.execute('INSERT INTO calls(started,kind,job_id) VALUES (?,?,?)',(now,kind,job['id'])).lastrowid
     ict_ids=[z['id'] for f in snap['frames'].values() for z in f['ict']['active']]
     fractal_ids=[e['id'] for q in snap['fractal_memory'].get('queries',{}).values() for e in q['examples']]
-    result,usage,latency=run_codex(prompt,chart,job['id'],label_anchors(snap),ict_ids,fractal_ids)
+    result,usage,latency=run_codex(prompt,chart,job['id'],label_anchors(snap),ict_ids,fractal_ids,measurement_ids=[x['id'] for x in snap['entry_measurements']['levels']])
     validate_result(result,snap,raw)
     render(snap,raw,chart,result)
     from .engine import is_invalid

@@ -89,6 +89,8 @@ def briefing(now):
             continue
         lines.append('🧭 <b>'+e(r.get('headline','')[:100])+'</b>')
         lines+=wave_blocks(r)
+        from .entry_context import display
+        lines+=display(r)
         plan=plan_summary(r)
         if plan:lines.append(plan)
         if r.get('trade_plan',{}).get('enabled'):
