@@ -12,6 +12,7 @@ from .analysis import snapshot
 from .charts import render
 
 log=logging.getLogger('wave.ai')
+PAPER_PROMPT='''가상계좌 실행규칙: trade_plan.paper_execution은 앞으로 관측할 가격으로만 실행할 별도 모의매매 규칙이다. 현재 진입근거를 충실히 표현할 수 있을 때만 활성화한다. limit은 지금 구조 확인이 완료되어 지정가만 대기할 경우, close_then_limit은 confirmation_tf 확정봉 종가가 confirmation_price보다 롱은 위/숏은 아래로 마감한 뒤 entry_preferred 지정가를 대기할 경우다. 확인 이전 체결은 없다. reason에 실제 조건과 기준봉을 적는다. expires_hours는 미체결 만료(1~12시간), hold_hours는 최초 체결 이후 잔량 최대 보유(1~72시간). 손절 stop, TP1 take_pct 분할, TP2 잔량 전량. breakeven_after_tp1이면 TP1 체결 즉시 평균가 스탑 이동, 아니면 기존 스탑 유지. 추가는 add_enabled일 때만 기존 position_plan.add_price에서 지정가 체결하되 최초 진입 이후 같은 confirmation_tf 종가가 add_confirmation_price를 같은 방향으로 확인해야 한다. 추가의 구조 조건이나 진입/청산의 필수 조건을 이 숫자 규칙으로 표현할 수 없으면 mode=disabled/add_enabled=false로 두고 reason에 이유를 적는다. 원래 조건을 몰래 생략하지 않는다. 수수료와 펀딩 없는 1배 가상계좌이며 실제 주문은 없다. 가상 계획 역시 파동/중첩 근거와 일관되어야 한다.'''
 
 
 def obj(properties):
@@ -22,6 +23,7 @@ def enum(*values):return {'type':'string','enum':list(values)}
 S={'type':'string'}
 N={'type':'number'}
 ARRAY=lambda item:{'type':'array','items':item}
+PAPER_SCHEMA=obj({'mode':enum('disabled','limit','close_then_limit'),'reason':S,'confirmation_tf':enum('5m','15m','1h','4h'),'confirmation_price':{'type':['number','null']},'expires_hours':{'type':'number','minimum':1,'maximum':12},'hold_hours':{'type':'number','minimum':1,'maximum':72},'breakeven_after_tp1':{'type':'boolean'},'add_enabled':{'type':'boolean'},'add_confirmation_price':{'type':['number','null']}})
 POSITION_SCHEMA=obj({'thesis_timeframe':enum('1d','4h','1h','15m','5m','1m'),'entry_timeframe':enum('1d','4h','1h','15m','5m','1m'),'stop_timeframe':enum('1d','4h','1h','15m','5m','1m'),'alignment_reason':S,'allocation_reason':S,'initial_units':N,'add_units':N,'add_price':{'type':['number','null']},'add_condition':S,'cancel_add_condition':S,'risk_budget_units':N})
 ENTRY_PROMPT='''진입 판단은 파동 이름 하나의 정답보다 여러 유효 시나리오의 공통 경로를 먼저 찾는다. 예: 단순 ABC 전체 종료와 큰 W 종료 후 X 반등이 같은 저점 유지/반전 확인에서 함께 롱을 지지할 수 있다. entry_logic.shared_path에 이를 설명하고 supporting_scenarios에 실제 성립 가능한 후보만 적는다. 각 후보에서 같은 진입이 유효한 이유와 익절/잔량 홀딩이 갈라지는 조건을 적는다. 억지로 두 후보를 만들지 않는다. 세 후보 중 두 개가 같은 방향이라는 이유로 2/3 승률을 부여하거나 확신도를 올리지 않는다. 후보들은 서로 독립된 사건이 아니다.
 entry_logic.confluence에는 진입 가격대에서 중첩되는 실제 근거를 가격·기준봉과 함께 설명한다. 파동상 위치, 명시한 기점의 피보나치, 실제 종류/기간의 이평, 지지저항·FVG·OB·매물대, 반전 확인을 구분한다. 같은 가격에서 나온 FVG/OB/파동 피벗을 독립 증거 세 개처럼 계산하지 않는다. 근거가 약하거나 가격이 아직 확인되지 않았으면 조건부 진입 또는 대기다. 임의로 0.618/200일선 접촉을 꾸미지 않는다. entry_measurements의 SMA는 확정봉 단순이평이며 EMA가 아니다. 피보나치 후보는 고저점·시각·비율을 확인하고 차수 선택 이유를 적어라. 실제 인용한 측정 ID만 measurement_ids에 선택한다. 접촉 여부와 반전 확인 여부는 별개다.
@@ -35,7 +37,7 @@ SCHEMA=obj({
     'state':enum('trend_impulse','correction_ongoing','correction_end_candidate','entry_structure_confirmed','ending_candidate','leading_candidate','triangle_ongoing','unclear'),
     'confidence':{'type':'integer','minimum':0,'maximum':100},
     'thesis':S,'alternative':S,'changed_since_previous':S,
-    'trade_plan':obj({'enabled':{'type':'boolean'},'reason':S,**{k:{'type':['number','null']} for k in ['entry_low','entry_high','entry_preferred','stop','tp1','tp2','holding_invalidation']},'take_pct':{'type':'integer','minimum':0,'maximum':100},'entry_rule':S,'entry_reason':S,'stop_reason':S,'tp1_reason':S,'breakeven_rule':S,'hold_rule':S,'holding_timeframe':enum('15m','1h','4h','1d','none'),'holding_exit_rule':S,'review_rule':S,'expected_horizon':S,'position_plan':POSITION_SCHEMA}),
+    'trade_plan':obj({'enabled':{'type':'boolean'},'reason':S,**{k:{'type':['number','null']} for k in ['entry_low','entry_high','entry_preferred','stop','tp1','tp2','holding_invalidation']},'take_pct':{'type':'integer','minimum':0,'maximum':100},'entry_rule':S,'entry_reason':S,'stop_reason':S,'tp1_reason':S,'breakeven_rule':S,'hold_rule':S,'holding_timeframe':enum('15m','1h','4h','1d','none'),'holding_exit_rule':S,'review_rule':S,'expected_horizon':S,'position_plan':POSITION_SCHEMA,'paper_execution':PAPER_SCHEMA}),
     'frames':ARRAY(obj({'tf':enum('1w','1d','4h','1h','15m','5m','1m'),'count':S,'evidence':S,'status':enum('developing','confirmed_structure','unclear','standby')})),
     'wave_view':ARRAY(obj({'tf':enum('1d','4h','1h','15m'),'trend':enum('상승','하락','횡보','불명확'),'count':S,'weights':obj({k:{'type':'integer','minimum':0,'maximum':100} for k in ['impulse','abc','wxy','triangle','unclear']}),'evidence':S})),
     'book_rule_ids':{'type':'array','items':S,'maxItems':4},'book_comment':S,
@@ -286,7 +288,7 @@ def process(job):
     charts=store.ROOT/'data/charts';charts.mkdir(exist_ok=True)
     chart=charts/f"{job['symbol']}-{job['id']}.png"
     render(snap,raw,chart)
-    prompt=PROMPT+'\n'+POSITION_PROMPT+'\n'+ENTRY_PROMPT+'\n입력 데이터:\n'+json.dumps(compact_input(snap),ensure_ascii=False,separators=(',',':'))
+    prompt=PROMPT+'\n'+POSITION_PROMPT+'\n'+ENTRY_PROMPT+'\n'+PAPER_PROMPT+'\n입력 데이터:\n'+json.dumps(compact_input(snap),ensure_ascii=False,separators=(',',':'))
     with store.db() as c:
         call_id=c.execute('INSERT INTO calls(started,kind,job_id) VALUES (?,?,?)',(now,kind,job['id'])).lastrowid
     ict_ids=[z['id'] for f in snap['frames'].values() for z in f['ict']['active']]

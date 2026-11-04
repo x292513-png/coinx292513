@@ -21,9 +21,9 @@ async def call(method, payload, file=None):
     return body['result']
 
 
-async def send(text, chart=None, reply_id=None, analysis_id=None):
+async def send(text, chart=None, reply_id=None, analysis_id=None, topic_id=None):
     from .presentation import pages
-    r=store.runtime();base={'chat_id':r['chat_id'],'message_thread_id':r['topic_id']}
+    r=store.runtime();base={'chat_id':r['chat_id'],'message_thread_id':topic_id if topic_id is not None else r['topic_id']}
     if reply_id:
         base['reply_parameters']={'message_id':reply_id,'allow_sending_without_reply':True}
     from .message_links import PATTERN,ensure,linkify,remember

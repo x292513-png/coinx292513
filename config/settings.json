@@ -59,5 +59,6 @@
   ],
   "sharp_alert_cooldown_seconds": 1800,
   "news_enabled": true,
-  "news_calls_per_day": 2
+  "news_calls_per_day": 2,
+  "paper_enabled": true
 }

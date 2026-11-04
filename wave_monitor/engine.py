@@ -174,6 +174,11 @@ async def periodic():
                             store.event(symbol,'analysis_trigger',{'reason':reason,'job_id':job_id})
                             store.put('deferred_trigger:'+symbol,None)
                 last_scan=now
+            try:
+                from . import paper
+                paper.tick(now)
+            except Exception:
+                log.exception("paper_tick_failed")
             from .cadence import tick
             tick(now)
             if now-last_report>60:
@@ -207,11 +212,11 @@ async def outbox():
             row=c.execute("SELECT * FROM outbox WHERE status='pending' AND attempts<5 ORDER BY id LIMIT 1").fetchone()
         if row:
             try:
-                ids=await telegram.send(row['text'],row['chart'],row['reply_id'],row['analysis_id'])
+                ids=await telegram.send(row['text'],row['chart'],row['reply_id'],row['analysis_id'],topic_id=row['topic_id'])
                 with store.db() as c:
                     for msgid in ids:c.execute('INSERT OR REPLACE INTO messages VALUES (?,?,?,?)',(msgid,row['analysis_id'],time.time(),'outgoing'))
                     c.execute("UPDATE outbox SET status='sent' WHERE id=?",(row['id'],))
-                store.put('last_telegram_delivery',{'time':time.time(),'message_ids':ids})
+                store.put('last_telegram_delivery',{'time':time.time(),'message_ids':ids,'topic_id':row['topic_id']})
             except Exception as e:
                 with store.db() as c:c.execute('UPDATE outbox SET attempts=attempts+1 WHERE id=?',(row['id'],))
                 log.warning('delivery_failed %s',type(e).__name__);await asyncio.sleep(30)

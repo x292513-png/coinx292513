@@ -61,6 +61,9 @@ def briefing(now):
     from .trade_plan import plan_summary,format_plan
     from html import escape as e
     lines=['🕐 <b>현재 상황 브리핑</b>\n'+datetime.fromtimestamp(now,KST).strftime('%m/%d %H:%M KST')]
+    if store.settings().get('paper_enabled'):
+        from .paper import summary
+        lines.append(e(summary(now)))
     chart_refs=[]
     for symbol in store.settings()['symbols']:
         p=store.get('price:'+symbol,{})

@@ -41,6 +41,10 @@ def init():
         CREATE TABLE IF NOT EXISTS evaluations(analysis_id INTEGER,hours INTEGER,created REAL,data TEXT,PRIMARY KEY(analysis_id,hours));
         CREATE TABLE IF NOT EXISTS zone_visits(id INTEGER PRIMARY KEY,created REAL,symbol TEXT,analysis_id INTEGER,low REAL,high REAL,role TEXT,price REAL,atr REAL,outcome TEXT);
         """)
+        if 'topic_id' not in [r['name'] for r in c.execute('PRAGMA table_info(outbox)')]:
+            c.execute('ALTER TABLE outbox ADD COLUMN topic_id INTEGER')
+    from . import paper
+    paper.init()
     if get('started_at') is None:
         put('started_at', time.time())
 
@@ -92,9 +96,9 @@ def queue(symbol, reason, kind='auto', question='', reply_id=None, analysis_ref=
         return cur.lastrowid
 
 
-def enqueue_message(text, analysis_id=None, chart=None, reply_id=None):
+def enqueue_message(text, analysis_id=None, chart=None, reply_id=None, topic_id=None):
     with db() as c:
-        c.execute('INSERT INTO outbox(created,analysis_id,text,chart,reply_id) VALUES (?,?,?,?,?)',(time.time(),analysis_id,text,chart,reply_id))
+        c.execute('INSERT INTO outbox(created,analysis_id,text,chart,reply_id,topic_id) VALUES (?,?,?,?,?,?)',(time.time(),analysis_id,text,chart,reply_id,topic_id))
 
 
 def record_zone_visit(created,symbol,analysis_id,zone,price,atr):
