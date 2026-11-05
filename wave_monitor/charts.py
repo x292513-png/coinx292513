@@ -24,6 +24,31 @@ def displayed_label(point):
     return label+'?' if point.get('confirmed') is False and '?' not in label else label
 
 
+def draw_measurements(ax, rows, measurements):
+    """Only draw grounded references selected in this analysis, without stretching price scale."""
+    from .channels import line
+    low=min(r['l'] for r in rows);high=max(r['h'] for r in rows)
+    notes=[]
+    channels=[m for m in measurements if m['kind']=='channel'][:1]
+    for m in channels:
+        a,b=m['baseline'];ts=[r['t'] for r in rows]
+        indexes=[i for i,t in enumerate(ts) if t>=a['t']]
+        for fraction in (0,.5,1):
+            ax.plot(indexes,[line(a,b,ts[i])+m['offset']*fraction for i in indexes],
+                    color='#55e1dd',lw=1,ls='--' if fraction==.5 else '-',alpha=.8)
+        notes.append(f"CH candidate ({m['status']}) L/M/U {m['lower']:,.2f} / {m['mid']:,.2f} / {m['upper']:,.2f}")
+    fibs=[m for m in measurements if m['kind'] in ('retracement','retracement_extension')][:4]
+    for m in fibs:
+        if low<=m['price']<=high:
+            ax.axhline(m['price'],color='#e6a6fa',lw=.8,ls=':')
+            notes.append(f"Fib {m['ratio']} = {m['price']:,.2f} ({m['start']['price']:,.2f} > {m['end']['price']:,.2f})")
+    if notes:
+        ax.text(.01,.02,'\n'.join(notes),transform=ax.transAxes,fontsize=7,color='#dfc9f6',va='bottom',
+                bbox={'facecolor':'#101926','alpha':.9,'edgecolor':'none','pad':3})
+        margin=max((high-low)*.08,high*.001)
+        ax.set_ylim(low-margin,high+margin)
+
+
 def render(snap, raw, path, result=None):
     fonts=[x.name for x in font_manager.fontManager.ttflist]
     for name in ['Noto Sans CJK KR','Noto Sans CJK JP','NanumGothic']:
@@ -41,7 +66,9 @@ def render(snap, raw, path, result=None):
         sub=grid[z//2,z%2].subgridspec(4,1,hspace=.02)
         ax=fig.add_subplot(sub[:3,0]);rx=fig.add_subplot(sub[3,0],sharex=ax)
         frame_labels=[p for p in (result or {}).get('wave_labels',[]) if p['tf']==tf]
-        rows=chart_rows(raw[tf],frame_labels);xmap={c['t']:i for i,c in enumerate(rows)}
+        measurements=[m for m in (result or {}).get('entry_logic',{}).get('measured_evidence',[]) if m['tf']==tf]
+        anchors=[p for m in measurements if m['kind']=='channel' for p in m['baseline']+[m['parallel_anchor']]]
+        rows=chart_rows(raw[tf],frame_labels+anchors);xmap={c['t']:i for i,c in enumerate(rows)}
         low=min(c['l'] for c in rows);high=max(c['h'] for c in rows)
         for i,c in enumerate(rows):
             color='#41d6b0' if c['c']>=c['o'] else '#ff7c83'
@@ -86,6 +113,7 @@ def render(snap, raw, path, result=None):
             ax.text(.01,.97-index*.055,f"{z['kind']} {midlabel} {z['mid']:,.2f}",transform=ax.transAxes,color=color,fontsize=7,va='top',bbox={'facecolor':'#101926','alpha':.75,'edgecolor':'none','pad':1})
         inval=(result or {}).get('invalidation_price')
         if inval and low<=inval<=high: ax.axhline(inval,color='#f28b92',lw=1,ls=':')
+        draw_measurements(ax,rows,measurements)
         vals,_=indicators(raw[tf]);vals=vals[-len(rows):]
         rx.plot(range(len(rows)),vals,color='#bbabfc',lw=1)
         rx.axhline(70,color='#785b7c',ls='--',lw=.6);rx.axhline(30,color='#526e70',ls='--',lw=.6)

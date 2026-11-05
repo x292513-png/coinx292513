@@ -31,6 +31,7 @@ PAPER_SCHEMA=obj({'conditions_fully_encoded':{'type':'boolean'},'mode':enum('dis
 POSITION_SCHEMA=obj({'thesis_timeframe':enum('1d','4h','1h','15m','5m','1m'),'entry_timeframe':enum('1d','4h','1h','15m','5m','1m'),'stop_timeframe':enum('1d','4h','1h','15m','5m','1m'),'alignment_reason':S,'allocation_reason':S,'initial_units':N,'add_units':N,'add_price':{'type':['number','null']},'add_condition':S,'cancel_add_condition':S,'risk_budget_units':N})
 ENTRY_PROMPT='''진입 판단은 파동 이름 하나의 정답보다 여러 유효 시나리오의 공통 경로를 먼저 찾는다. 예: 단순 ABC 전체 종료와 큰 W 종료 후 X 반등이 같은 저점 유지/반전 확인에서 함께 롱을 지지할 수 있다. entry_logic.shared_path에 이를 설명하고 supporting_scenarios에 실제 성립 가능한 후보만 적는다. 각 후보에서 같은 진입이 유효한 이유와 익절/잔량 홀딩이 갈라지는 조건을 적는다. 억지로 두 후보를 만들지 않는다. 세 후보 중 두 개가 같은 방향이라는 이유로 2/3 승률을 부여하거나 확신도를 올리지 않는다. 후보들은 서로 독립된 사건이 아니다.
 entry_logic.confluence에는 진입 가격대에서 중첩되는 실제 근거를 가격·기준봉과 함께 설명한다. 파동상 위치, 명시한 기점의 피보나치, 실제 종류/기간의 이평, 지지저항·FVG·OB·매물대, 반전 확인을 구분한다. 같은 가격에서 나온 FVG/OB/파동 피벗을 독립 증거 세 개처럼 계산하지 않는다. 근거가 약하거나 가격이 아직 확인되지 않았으면 조건부 진입 또는 대기다. 임의로 0.618/200일선 접촉을 꾸미지 않는다. entry_measurements의 SMA는 확정봉 단순이평이며 EMA가 아니다. 피보나치 후보는 고저점·시각·비율을 확인하고 차수 선택 이유를 적어라. 실제 인용한 측정 ID만 measurement_ids에 선택한다. 접촉 여부와 반전 확인 여부는 별개다.
+채널과 피보나치를 반드시 검토하되 엘리어트 파동의 차수·구조 판단을 우선한다. channel은 확정 피벗 두 점과 사이 반대 피벗으로 만든 선형 가격 평행 채널 후보이며 검증된 엘리어트 채널이 아니다. 기준봉·기점·선택 이유와 상단/중앙/하단 및 확정봉 이탈 상태를 확인한다. outside_closes가 있으면 과거 이탈을 숨기지 말고 현재 재진입 여부를 구분한다. below 상태의 하단을 지켜진 지지로 쓰지 않는다. 피보나치 0.236/0.382/0.5/0.618/0.786/0.886과 1 초과 확장은 같은 두 기점의 되돌림 척도이며 ABC 3점 목표 투사와 다르다. 관련 채널/비율이 있으면 measurement_ids에 선택하여 차트에도 표시한다. 관련 없으면 이유를 짧게 적고 억지 선택하지 않는다. 같은 기점에서 유도한 여러 선을 독립 확률로 합산하지 않는다.
 entry_logic.trigger에는 공통으로 필요한 진입 확인 조건, failure_case에는 C 미완료/하락 연장 등 반대 가설과 롱·숏 공통 진입이 깨지는 가격/구조를 적는다. 큰 조정 종료 미확인이라도 단기 반등 거래는 가능하되 그 목표를 큰 상승 재개의 목표와 혼동하지 않는다. 하위 ABC 종료를 상위 전체 조정 종료로 자동 승격하지 말고 차수를 명시한다.'''
 POSITION_PROMPT='''포지션 계획: trade_plan.position_plan에는 큰 판단 기준봉/실제 진입 확인봉/손절 구조 기준봉을 각각 명시한다. 단기 역추세, 추세순응 눌림, 상위 추세 속 하위 반등 종료 확인을 구분해 alignment_reason에 설명한다. allocation_reason에는 비중을 택한 질적 이유만 적고 숫자를 쓰지 않는다. 평균가·유닛·손실 계산은 프로그램이 출력한다.
 총자금 100유닛, 1배 상당 포지션 금액으로 최초/추가/예비 비중을 제시한다. 증거 강도는 검증된 승률이 아니며 confidence=70을 70% 승률이나 70유닛으로 변환하지 않는다. 4개 기준봉 일치 시 최대 100유닛·손실예산1, 혼재 최대50·0.75, 일봉/4h 모두 역방향이면 최대30·0.5라는 운영 규칙 안에서 자신의 선택과 이유를 말한다. 왕복 수수료·슬리피지 합계 가정 0.20% 포함 총위험을 고려한다.
@@ -51,7 +52,7 @@ SCHEMA=obj({
     'targets':ARRAY(N),'rsi_comment':S,'volume_comment':S,'ict_comment':S,'ict_watch_ids':ARRAY(S),
     'wave_labels':ARRAY(obj({'pivot_id':S,'label':S})),
     'answer_to_user':S,'next_watch':S,'learning_comment':S,'fractal_comment':S,'fractal_example_ids':ARRAY(S),
-    'entry_logic':obj({'shared_path':S,'supporting_scenarios':{'type':'array','maxItems':3,'items':obj({'scenario':S,'why_same_entry':S,'exit_difference':S})},'confluence':S,'trigger':S,'failure_case':S,'measurement_ids':{'type':'array','maxItems':4,'items':S}})
+    'entry_logic':obj({'shared_path':S,'supporting_scenarios':{'type':'array','maxItems':3,'items':obj({'scenario':S,'why_same_entry':S,'exit_difference':S})},'confluence':S,'trigger':S,'failure_case':S,'measurement_ids':{'type':'array','maxItems':6,'items':S}})
 })
 
 PROMPT='''당신은 사용자의 바이낸스 USDT 무기한 선물 차트 분석 파트너다. 반드시 엘리어트 파동을 1차 분석 틀로 삼고 일봉→4시간→1시간→15분 순서로 탑다운 판단한다. 주봉은 배경이고 5분·1분은 진입 보조다. 상위 하락도 임펄스인지 상승 추세 안의 조정인지 먼저 구분한다. 지지저항·FVG·OB·매물대·RSI는 파동 시나리오와 진입 타점을 검증하는 보조 근거다.
