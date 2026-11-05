@@ -44,6 +44,9 @@ def answer(text,now=None):
             for label,value in [('진입 근거',plan.get('entry_reason')),('파동·중첩 근거',r.get('entry_logic',{}).get('confluence'))]:
                 if value:lines.append(label+': '+value[:700])
             blocks+=quoted(f"{'📍 보유' if p['status']=='open' else '⏳ 미체결'} {p['symbol']} {side} — 상세 보기",'\n\n'.join(lines))
+        for symbol in symbols or store.settings()['symbols']:
+            latest=next((p for p in reversed(states) if p.get('symbol')==symbol),None)
+            if latest and latest.get('status')=='canceled':blocks.append(escape('🚫 '+symbol+' 최근 계획 취소: '+paper.cancellation_reason(c,latest)))
         events=[dict(x) for x in c.execute("SELECT symbol,kind,created,price,pnl FROM paper_events WHERE kind IN ('entry','add','tp1','tp2','stop','time_exit','gap_exit') ORDER BY id DESC LIMIT 10")]
     if events:
         names={'entry':'진입','add':'추가 진입','tp1':'1차 익절','tp2':'잔량 익절','stop':'손절','time_exit':'시간 만료 청산','gap_exit':'데이터 공백 청산'}

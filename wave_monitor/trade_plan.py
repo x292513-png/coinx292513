@@ -13,8 +13,10 @@ def plan_summary(result):
     preferred=p.get('entry_preferred')
     entry=f'{preferred:,.2f}' if preferred is not None else f"{p['entry_low']:,.2f}–{p['entry_high']:,.2f}"
     side='롱' if result['bias']=='bullish' else '숏'
+    mode=p.get('paper_execution',{}).get('mode')
+    execution={'market':'확인된 근거로 다음 1분봉 시가 진입 검토','close_then_market':'확인봉 이후 다음 1분봉 시가 진입 · 지정가 재방문 불필요','limit':'활성 지정가 계획','close_then_limit':'확인봉 이후 지정가 계획'}.get(mode,'조건 확인 후 진입')
     return '\n\n'.join(([escape(context)] if context else [])+[
-        f'📌 <b>{side} 진입 기준 · {entry}</b>\n허용 구간 {p["entry_low"]:,.2f}–{p["entry_high"]:,.2f}\n조건 확인 후 진입 · 아래 진입 순서 참고',
+        f'📌 <b>{side} 진입 기준 · {entry}</b>\n허용 구간 {p["entry_low"]:,.2f}–{p["entry_high"]:,.2f}\n{execution} · 아래 진입 순서 참고',
         f'⛔ <b>최초 손절 · {p["stop"]:,.2f}</b>',
         f'🎯 <b>1차 익절 · {p["tp1"]:,.2f}</b>\n{p["take_pct"]}% 정리',
         f'🏁 <b>잔량 목표 · {p["tp2"]:,.2f}</b>\n나머지 {100-p["take_pct"]}% · 홀딩 조건은 아래 펼쳐 보기'])

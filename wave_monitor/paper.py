@@ -5,6 +5,12 @@ from html import escape
 from . import store
 KST=timezone(timedelta(hours=9))
 ACTIVE=('waiting','armed','open')
+MARKET_MODES=('market','close_then_market')
+CANCEL_REASONS={'structure_failure_before_entry':'진입 전 구조 실패선 이탈','reversal_or_breakout_failed_at_open':'진입 직전 반전·돌파 기준선 재이탈','entry_band_chase_or_rr_failed':'허용 가격·최대 이격 또는 1차 손익비 조건 불충족','portfolio_risk_budget':'공유 계좌의 남은 손실예산 부족','expiry_or_invalidation':'미체결 유효시간 만료 또는 손절 기준 이탈','unencoded_conditions':'필수 실행 조건 미검증','new_analysis':'새 분석 계획으로 교체','analysis_invalidated':'분석 가설 무효화','paused':'사용자 일시정지'}
+
+def cancellation_reason(c,p):
+    row=c.execute("SELECT detail FROM paper_events WHERE plan_id=? AND kind='cancel' ORDER BY id DESC LIMIT 1",(p['id'],)).fetchone()
+    return CANCEL_REASONS.get(row['detail'],'가상 주문 취소') if row else '가상 주문 취소'
 
 def init():
     with store.db() as c:
@@ -42,10 +48,21 @@ def valid_execution(result):
     s=1 if result['bias']=='bullish' else -1
     if not (p['entry_preferred']-p['stop'])*s>0 or not (p['tp1']-p['entry_preferred'])*s>0 or not (p['tp2']-p['tp1'])*s>0:raise ValueError('paper_price_order')
     if not 0<p['take_pct']<100:raise ValueError('paper_partial')
-    if x['mode'] not in ('limit','close_then_limit'):raise ValueError('paper_mode')
-    if x['confirmation_tf'] not in ('5m','15m','1h','4h'):raise ValueError('paper_tf')
-    if not 1<=x['expires_hours']<=12 or not 1<=x['hold_hours']<=72:raise ValueError('paper_expiry')
-    if x['mode']=='close_then_limit' and (not isinstance(x['confirmation_price'],(int,float)) or not math.isfinite(x['confirmation_price']) or x['confirmation_price']<=0):raise ValueError('paper_confirmation')
+    if x['mode'] not in ('limit','close_then_limit',*MARKET_MODES):raise ValueError('paper_mode')
+    if x['confirmation_tf'] not in ('1m','5m','15m','1h','4h'):raise ValueError('paper_tf')
+    if not .05<=x['expires_hours']<=12 or not 1<=x['hold_hours']<=72:raise ValueError('paper_expiry')
+    if x['mode']!='limit' and (not isinstance(x['confirmation_price'],(int,float)) or not math.isfinite(x['confirmation_price']) or x['confirmation_price']<=0):raise ValueError('paper_confirmation')
+    if x['mode'] in MARKET_MODES:
+        if x.get('setup') not in ('c_wave_reversal','wave4_reversal','impulse_continuation','pullback'):raise ValueError('paper_setup')
+        if not .05<=x.get('max_entry_deviation_pct',0)<=2:raise ValueError('paper_chase_cap')
+        if x['add_enabled']:raise ValueError('paper_market_add_not_supported')
+        for k in ('entry_low','entry_high'):
+            if not isinstance(p.get(k),(int,float)) or not math.isfinite(p[k]):raise ValueError('paper_entry_band')
+        if not p['entry_low']<=p['entry_preferred']<=p['entry_high']:raise ValueError('paper_entry_band')
+    cancel=x.get('cancel_price')
+    if cancel is not None:
+        if not isinstance(cancel,(int,float)) or not math.isfinite(cancel) or cancel<=0 or x.get('cancel_tf') not in ('1m','5m','15m','1h','4h'):raise ValueError('paper_cancel')
+        if (cancel-p['stop'])*s<0 or (p['entry_preferred']-cancel)*s<=0:raise ValueError('paper_cancel_order')
     if not 0<p.get('position_plan',{}).get('initial_units',0)<=100:raise ValueError('paper_units')
     if x['add_enabled']:
         if not p['position_plan']['add_units'] or not isinstance(x['add_confirmation_price'],(int,float)) or not math.isfinite(x['add_confirmation_price']) or x['add_confirmation_price']<=0:raise ValueError('paper_add_confirmation')
@@ -78,17 +95,43 @@ def register(a,now):
         if add:proposed+=add*abs(pp['add_price']-plan['stop'])/pp['add_price']
         factor=min(1,max(0,equity-used)/max(amount+add,1e-9),max(0,equity*.01-risk)/max(proposed,1e-9))
         if equity<=0 or amount*factor<.01:p['reason']='공유 자금 또는 손실예산 부족';save(c,p);return
-        p.update(status='waiting' if x['mode']=='close_then_limit' else 'armed',sign=1 if r['bias']=='bullish' else -1,limit=plan['entry_preferred'],stop=plan['stop'],tp1=plan['tp1'],tp2=plan['tp2'],take=plan['take_pct']/100,amount=amount*factor,add_amount=add*factor,add_limit=pp['add_price'] if add else 0,added=False,add_armed=None,qty=0,average=0,tp1_done=False,entry_time=None,armed_time=now if x['mode']=='limit' else None,last_t=(math.ceil(now/60)-1)*60000,expires=now+x['expires_hours']*3600,hold_hours=x['hold_hours'],rules=x)
+        if x['mode']=='market':
+            bar=c.execute('SELECT * FROM candles WHERE symbol=? AND tf=? AND closed=1 AND close_t<=? ORDER BY t DESC LIMIT 1',(a['symbol'],x['confirmation_tf'],now*1000)).fetchone()
+            if not confirms_level(c,bar,x['confirmation_price'],1 if r['bias']=='bullish' else -1,x.get('setup') in ('c_wave_reversal','wave4_reversal')):
+                p['reason']='즉시 진입의 확정봉 조건 미충족';save(c,p);return
+        p.update(status='waiting' if x['mode'].startswith('close_then_') else 'armed',sign=1 if r['bias']=='bullish' else -1,limit=plan['entry_preferred'],stop=plan['stop'],tp1=plan['tp1'],tp2=plan['tp2'],take=plan['take_pct']/100,amount=amount*factor,add_amount=add*factor,add_limit=pp['add_price'] if add else 0,added=False,add_armed=None,qty=0,average=0,tp1_done=False,entry_time=None,armed_time=now if x['mode'] in ('limit','market') else None,last_t=(math.ceil(now/60)-1)*60000,expires=now+x['expires_hours']*3600,hold_hours=x['hold_hours'],rules=x,entry_low=plan.get('entry_low'),entry_high=plan.get('entry_high'))
         save(c,p);event(c,p,now,'planned',detail=x['reason'])
+
+def confirms_level(c,row,level,sign,reversal=False):
+    if not row or (row['c']-level)*sign<=0:return False
+    if not reversal:return True
+    if (row['c']-row['o'])*sign<=0:return False
+    return (row['o']-level)*sign<=0
 
 def confirmed(c,p,bar,add=False):
     x=p['rules'];level=x['add_confirmation_price'] if add else x['confirmation_price']
     after=p['entry_time'] if add else p['created']
-    row=c.execute("SELECT c,close_t,t FROM candles WHERE symbol=? AND tf=? AND closed=1 AND close_t<=? AND close_t>? ORDER BY close_t DESC LIMIT 1",(p['symbol'],x['confirmation_tf'],bar['close_t'],after*1000)).fetchone()
-    return bool(row and row['t']>=after*1000 and (row['c']-level)*p['sign']>0)
+    row=c.execute("SELECT * FROM candles WHERE symbol=? AND tf=? AND closed=1 AND close_t<=? AND close_t>? ORDER BY close_t DESC LIMIT 1",(p['symbol'],x['confirmation_tf'],bar['close_t'],after*1000)).fetchone()
+    reversal=not add and x['mode'] in MARKET_MODES and x.get('setup') in ('c_wave_reversal','wave4_reversal')
+    return bool(row and row['t']>=after*1000 and confirms_level(c,row,level,p['sign'],reversal))
 
 def hit_stop(p,b):return b['l']<=p['stop'] if p['sign']==1 else b['h']>=p['stop']
 def hit_target(p,b,level):return b['h']>=level if p['sign']==1 else b['l']<=level
+
+def failed_structure(c,p,b):
+    x=p['rules'];level=x.get('cancel_price')
+    if level is None:return False
+    # Only information known at this minute's open can cancel an already active order.
+    cutoff=b['close_t'] if p['status']=='waiting' else b['t']-1
+    row=c.execute('SELECT c FROM candles WHERE symbol=? AND tf=? AND closed=1 AND t>=? AND close_t<=? ORDER BY t DESC LIMIT 1',(p['symbol'],x['cancel_tf'],p['created']*1000,cutoff)).fetchone()
+    return bool(row and (row['c']-level)*p['sign']<=0)
+
+def market_amount(c,p,price):
+    """Resize for the actual simulated fill, retaining the original loss budget."""
+    others=[s for s in read_states(c) if s.get('id')!=p['id']]
+    used=sum(reserve(s)[0] for s in others);risk=sum(reserve(s)[1] for s in others)
+    equity=account(c);budget=min(p['amount']*abs(p['limit']-p['stop'])/p['limit'],max(0,equity*.01-risk))
+    return min(p['amount'],max(0,equity-used),budget/(abs(price-p['stop'])/price))
 
 def exit_qty(c,p,b,qty,price,kind,detail=''):
     pnl=qty*(price-p['average'])*p['sign'];p['qty']=max(0,p['qty']-qty)
@@ -98,11 +141,27 @@ def exit_qty(c,p,b,qty,price,kind,detail=''):
 def step(c,p,b):
     now=b['close_t']/1000;p['last_t']=b['t']
     if p['status'] in ('waiting','armed'):
-        if now>p['expires'] or (p['status']=='waiting' and hit_stop(p,b)) or (b['o']-p['stop'])*p['sign']<=0:p['status']='canceled';event(c,p,now,'cancel',detail='expiry_or_invalidation');return
+        decision_time=b['t']/1000 if p['status']=='armed' and p['rules']['mode'] in MARKET_MODES else now
+        if decision_time>p['expires'] or (p['status']=='waiting' and hit_stop(p,b)) or (b['o']-p['stop'])*p['sign']<=0:p['status']='canceled';event(c,p,now,'cancel',detail='expiry_or_invalidation');return
+        if failed_structure(c,p,b):p['status']='canceled';event(c,p,now,'cancel',detail='structure_failure_before_entry');return
         if p['status']=='waiting':
             if confirmed(c,p,b):p['status']='armed';p['armed_time']=now;event(c,p,now,'armed',detail='closed_candle_confirmation')
             return # cannot fill on the candle that first confirms
         if b['t']/1000<=p['armed_time']:return
+        if p['rules']['mode'] in MARKET_MODES:
+            price=b['o'];risk=(price-p['stop'])*p['sign'];reward=(p['tp1']-price)*p['sign']
+            deviation=(price-p['limit'])*p['sign']/p['limit']*100
+            cancel=p['rules'].get('cancel_price')
+            if (price-p['rules']['confirmation_price'])*p['sign']<=0 or (cancel is not None and (price-cancel)*p['sign']<=0):
+                p['status']='canceled';event(c,p,now,'cancel',detail='reversal_or_breakout_failed_at_open');return
+            if not p['entry_low']<=price<=p['entry_high'] or deviation>p['rules']['max_entry_deviation_pct'] or reward/risk<1.5:
+                p['status']='canceled';event(c,p,now,'cancel',detail='entry_band_chase_or_rr_failed');return
+            amount=market_amount(c,p,price)
+            if amount<.01:p['status']='canceled';event(c,p,now,'cancel',detail='portfolio_risk_budget');return
+            p.update(status='open',amount=amount,qty=amount/price,average=price,entry_time=b['t']/1000)
+            event(c,p,b['t']/1000,'entry',price,p['qty'],detail='market_next_1m_open_after_confirmation')
+            if hit_stop(p,b):exit_qty(c,p,b,p['qty'],p['stop'],'stop','entry_bar_stop_first')
+            return
         touched=b['l']<=p['limit'] if p['sign']==1 else b['h']>=p['limit']
         if not touched:return
         price=min(p['limit'],b['o']) if p['sign']==1 else max(p['limit'],b['o'])
@@ -149,7 +208,7 @@ def summary(now,full=False):
         positions.append(f"{p['symbol']} {'롱' if p['sign']==1 else '숏'} · 평균 {p['average']:,.2f} · 평가 {pnl:+.3f}유닛")
         if full:positions.append(f"현재 스탑 {p['stop']:,.2f} · 잔량 목표 {p['tp2']:,.2f} · 투입잔액 {p['qty']*p['average']:.3f}유닛")
     reserved=sum(reserve(p)[0] for p in states if p.get('status') in ACTIVE)
-    lines=['🧪 가상 매매 · 실제 주문 없음',f'총자산 {capital+unreal:.3f}유닛 / 시작 100',f'실현 {capital-100:+.3f} · 평가 {unreal:+.3f}유닛',f'미배정 {max(0,capital-reserved):.3f}유닛',f'조건 관찰 {sum(p.get("status")=="waiting" for p in states)}건 (주문 미활성) / 활성 지정가 {sum(p.get("status")=="armed" for p in states)}건']
+    lines=['🧪 가상 매매 · 실제 주문 없음',f'총자산 {capital+unreal:.3f}유닛 / 시작 100',f'실현 {capital-100:+.3f} · 평가 {unreal:+.3f}유닛',f'미배정 {max(0,capital-reserved):.3f}유닛',f'조건 관찰 {sum(p.get("status")=="waiting" for p in states)}건 / 확인 완료·체결 대기 {sum(p.get("status")=="armed" for p in states)}건']
     if stale:lines.append('⚠ 시세 지연: 평가손익은 마지막 관측 가격 기준')
     lines+=positions or ['현재 보유 없음']
     if full:
@@ -170,10 +229,18 @@ def summary(now,full=False):
 
 def order_status(p):
     side='롱' if p['sign']==1 else '숏'
+    market=p['rules']['mode'] in MARKET_MODES
+    setup={'c_wave_reversal':'C파 말단 반전','wave4_reversal':'4파 조정 후 반전','impulse_continuation':'추진파 돌파·가속','pullback':'눌림'}.get(p['rules'].get('setup'),'파동 계획')
+    cancel=p['rules'].get('cancel_price')
+    extra=f"\n진입 전 구조 실패: {p['rules']['cancel_tf']} 종가 {cancel:,.2f} {'이하' if p['sign']==1 else '이상'}면 취소" if cancel is not None else ''
+    if market:
+        trigger=f"{p['rules']['confirmation_tf']} 종가 {p['rules']['confirmation_price']:,.2f} {'위' if p['sign']==1 else '아래'}"
+        state='조건 관찰 중' if p['status']=='waiting' else '확인 완료·진입 대기'
+        return f"⚡ {p['symbol']} {side} · {setup} · {state}\n{trigger} 확인 후 다음 1분봉 시가로 가상 진입 · 지정가 재방문 불필요\n허용 {p['entry_low']:,.2f}~{p['entry_high']:,.2f} / 최대 이격 {p['rules']['max_entry_deviation_pct']:g}% / 1차 손익비 1.5R 이상"+extra
     if p['status']=='waiting':
         direction='위' if p['sign']==1 else '아래'
-        return f"🔎 {p['symbol']} {side} · 조건 관찰 중, 지정가 미활성\n선행 조건: {p['rules']['confirmation_tf']} 종가 {p['rules']['confirmation_price']:,.2f} {direction}\n조건 충족 후 예정가 {p['limit']:,.2f} · 지금 이 가격을 지나도 체결하지 않음"
-    return f"📌 {p['symbol']} {side} · 활성 지정가 {p['limit']:,.2f}\n이후 가격 도달 시 가상 체결 (1분봉 기준)"
+        return f"🔎 {p['symbol']} {side} · 조건 관찰 중, 지정가 미활성\n선행 조건: {p['rules']['confirmation_tf']} 종가 {p['rules']['confirmation_price']:,.2f} {direction}\n조건 충족 후 예정가 {p['limit']:,.2f} · 지금 이 가격을 지나도 체결하지 않음"+extra
+    return f"📌 {p['symbol']} {side} · 활성 지정가 {p['limit']:,.2f}\n이후 가격 도달 시 가상 체결 (1분봉 기준)"+extra
 
 def report(now):
     from .presentation import pack,quoted
