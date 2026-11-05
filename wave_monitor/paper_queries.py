@@ -38,7 +38,8 @@ def answer(text,now=None):
                 realized=c.execute('SELECT COALESCE(SUM(pnl),0) FROM paper_events WHERE plan_id=?',(p['id'],)).fetchone()[0]
                 lines.extend([f"이 포지션 실현손익 {realized:+.3f}유닛",f"최대 보유 종료 {stamp(p['entry_time']+p['hold_hours']*3600)}"])
             else:
-                lines.extend(['아직 보유하지 않습니다. '+('확정봉 조건 확인 대기' if p['status']=='waiting' else '조건 확인 후 지정가 대기'),f"대기 지정가 {p['limit']:,.2f} / 예약 {p['amount']:.3f}유닛",f"미체결 만료 {stamp(p['expires'])}"])
+                blocks.append(escape(paper.order_status(p)))
+                lines.extend(['아직 보유하지 않습니다.',paper.order_status(p),f"계획 금액 {p['amount']:.3f}유닛",f"미체결 만료 {stamp(p['expires'])}"])
             lines.extend([f"현재 손절 {p['stop']:,.2f}",f"1차 익절 {p['tp1']:,.2f} ({p['take']*100:g}%) · "+('완료' if p['tp1_done'] else '대기'),f"잔량 목표 {p['tp2']:,.2f}",f"실행 조건: {p['reason']}"])
             for label,value in [('진입 근거',plan.get('entry_reason')),('파동·중첩 근거',r.get('entry_logic',{}).get('confluence'))]:
                 if value:lines.append(label+': '+value[:700])

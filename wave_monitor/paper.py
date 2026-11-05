@@ -34,6 +34,8 @@ def reserve(p):
 def valid_execution(result):
     p=result.get('trade_plan',{});x=p.get('paper_execution',{})
     if not p.get('enabled') or x.get('mode','disabled')=='disabled':return False
+    if x.get('conditions_fully_encoded') is not True:raise ValueError('paper_unencoded_conditions')
+    if '표현할 수 없' in x.get('reason',''):raise ValueError('paper_unencoded_conditions')
     if result.get('bias') not in ('bullish','bearish'):raise ValueError('paper_direction')
     for k in ('entry_preferred','stop','tp1','tp2'):
         if not isinstance(p.get(k),(int,float)) or not math.isfinite(p[k]) or p[k]<=0:raise ValueError('paper_price')
@@ -147,7 +149,7 @@ def summary(now,full=False):
         positions.append(f"{p['symbol']} {'롱' if p['sign']==1 else '숏'} · 평균 {p['average']:,.2f} · 평가 {pnl:+.3f}유닛")
         if full:positions.append(f"현재 스탑 {p['stop']:,.2f} · 잔량 목표 {p['tp2']:,.2f} · 투입잔액 {p['qty']*p['average']:.3f}유닛")
     reserved=sum(reserve(p)[0] for p in states if p.get('status') in ACTIVE)
-    lines=['🧪 가상 매매 · 실제 주문 없음',f'총자산 {capital+unreal:.3f}유닛 / 시작 100',f'실현 {capital-100:+.3f} · 평가 {unreal:+.3f}유닛',f'미배정 {max(0,capital-reserved):.3f}유닛 · 조건/지정가 대기 {sum(p.get("status") in ("waiting","armed") for p in states)}건']
+    lines=['🧪 가상 매매 · 실제 주문 없음',f'총자산 {capital+unreal:.3f}유닛 / 시작 100',f'실현 {capital-100:+.3f} · 평가 {unreal:+.3f}유닛',f'미배정 {max(0,capital-reserved):.3f}유닛',f'조건 관찰 {sum(p.get("status")=="waiting" for p in states)}건 (주문 미활성) / 활성 지정가 {sum(p.get("status")=="armed" for p in states)}건']
     if stale:lines.append('⚠ 시세 지연: 평가손익은 마지막 관측 가격 기준')
     lines+=positions or ['현재 보유 없음']
     if full:
@@ -159,12 +161,19 @@ def summary(now,full=False):
         if not events:lines.append('새 거래 없음')
         for p in states:
             if p.get('status') in ('waiting','armed'):
-                lines.extend(['',f"대기 {p['symbol']} {'롱' if p['sign']==1 else '숏'} · {p['amount']:.3f}유닛",f"지정가 {p['limit']:,.2f} / 손절 {p['stop']:,.2f}",f"1차 {p['tp1']:,.2f} ({p['take']*100:g}%) / 잔량 {p['tp2']:,.2f}",f"최대 보유 {p['hold_hours']:g}시간 · 조건: {p['reason']}"])
+                lines.extend(['',order_status(p),f"계획 금액 {p['amount']:.3f}유닛 / 손절 {p['stop']:,.2f}",f"1차 {p['tp1']:,.2f} ({p['take']*100:g}%) / 잔량 {p['tp2']:,.2f}",f"최대 보유 {p['hold_hours']:g}시간 · 조건: {p['reason']}"])
         for symbol in store.settings()['symbols']:
             latest=next((p for p in reversed(states) if p.get('symbol')==symbol),None)
             if latest and latest.get('status')=='skipped' and latest.get('reason')!='position_already_open':lines.extend(['',symbol+' · 미진입: '+latest.get('reason','실행 조건 없음')])
         lines+=['','수수료·펀딩 제외 / 1배 / 1분 OHLC 가상 체결. 같은 봉 손절·목표 동시 도달은 손절 우선. 과거 유리한 체결 소급 없음.']
     return '\n'.join(lines)
+
+def order_status(p):
+    side='롱' if p['sign']==1 else '숏'
+    if p['status']=='waiting':
+        direction='위' if p['sign']==1 else '아래'
+        return f"🔎 {p['symbol']} {side} · 조건 관찰 중, 지정가 미활성\n선행 조건: {p['rules']['confirmation_tf']} 종가 {p['rules']['confirmation_price']:,.2f} {direction}\n조건 충족 후 예정가 {p['limit']:,.2f} · 지금 이 가격을 지나도 체결하지 않음"
+    return f"📌 {p['symbol']} {side} · 활성 지정가 {p['limit']:,.2f}\n이후 가격 도달 시 가상 체결 (1분봉 기준)"
 
 def report(now):
     from .presentation import pack,quoted
@@ -186,6 +195,8 @@ def tick(now):
         c.execute('BEGIN IMMEDIATE')
         for p in read_states(c):
             if p.get('status') not in ACTIVE:continue
+            if p['status'] in ('waiting','armed') and p['rules'].get('conditions_fully_encoded') is not True:
+                p['status']='canceled';p['block_reason']='필수 조건의 수치 실행 가능 여부 미검증';event(c,p,now,'cancel',detail='unencoded_conditions');save(c,p);continue
             if paused and p['status']!='open':
                 p['status']='canceled';event(c,p,now,'cancel',detail='paused');save(c,p);continue
             bars=c.execute("SELECT * FROM candles WHERE symbol=? AND tf='1m' AND closed=1 AND t>? AND close_t<=? ORDER BY t",(p['symbol'],p['last_t'],now*1000)).fetchall()

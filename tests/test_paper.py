@@ -9,7 +9,7 @@ class PaperTests(unittest.TestCase):
   self.cfg=patch.object(store,'settings',return_value={'paper_enabled':True,'symbols':['BTCUSDT','ETHUSDT']});self.cfg.start();store.put('paper_started',60)
  def tearDown(self):self.cfg.stop();self.root.stop();self.tmp.cleanup()
  def analysis(self,aid=1,symbol='BTCUSDT'):
-  return {'id':aid,'created':60,'symbol':symbol,'snapshot':{},'result':{'bias':'bullish','trade_plan':{'enabled':True,'entry_preferred':100,'stop':95,'tp1':110,'tp2':120,'take_pct':50,'position_plan':{'initial_units':10,'add_units':10,'add_price':97},'paper_execution':{'mode':'limit','reason':'test','confirmation_tf':'5m','confirmation_price':102,'expires_hours':4,'hold_hours':24,'breakeven_after_tp1':True,'add_enabled':False,'add_confirmation_price':102}}}}
+  return {'id':aid,'created':60,'symbol':symbol,'snapshot':{},'result':{'bias':'bullish','trade_plan':{'enabled':True,'entry_preferred':100,'stop':95,'tp1':110,'tp2':120,'take_pct':50,'position_plan':{'initial_units':10,'add_units':10,'add_price':97},'paper_execution':{'conditions_fully_encoded':True,'mode':'limit','reason':'test','confirmation_tf':'5m','confirmation_price':102,'expires_hours':4,'hold_hours':24,'breakeven_after_tp1':True,'add_enabled':False,'add_confirmation_price':102}}}}
  def plan(self):
   paper.register(self.analysis(),60)
   with store.db() as c:return paper.read_states(c)[0]
@@ -84,3 +84,27 @@ class PaperTests(unittest.TestCase):
   p=self.plan();self.runbar(p);paper.register(self.analysis(2),180);paper.register(self.analysis(3),181)
   with store.db() as c:
    states=paper.read_states(c);self.assertEqual(sum(x['status']=='open' for x in states),1);self.assertEqual(len(states),3)
+ def test_unencoded_or_contradictory_plan_rejected(self):
+  for i,kind in enumerate(('missing','false','contradiction'),10):
+   a=self.analysis(i);x=a['result']['trade_plan']['paper_execution']
+   if kind=='missing':x.pop('conditions_fully_encoded')
+   elif kind=='false':x['conditions_fully_encoded']=False
+   else:x['reason']='필수 반전 구조를 완전히 표현할 수 없어 추가 확인 필요'
+   paper.register(a,60)
+   with store.db() as c:self.assertEqual(paper.read_states(c)[-1]['status'],'skipped')
+ def test_limit_cross_only_fills_active_order(self):
+  a=self.analysis();a['result']['trade_plan']['paper_execution']['mode']='close_then_limit';paper.register(a,60)
+  with store.db() as c:p=paper.read_states(c)[0]
+  self.runbar(p,t=120,o=99,h=101,l=98)
+  self.assertEqual(p['status'],'waiting');self.assertEqual(p['qty'],0)
+  self.assertIn('지정가 미활성',paper.order_status(p));self.assertIn('지금 이 가격을 지나도 체결하지 않음',paper.order_status(p))
+  p.update(status='armed',armed_time=180)
+  self.runbar(p,t=240,o=99,h=101,l=98)
+  self.assertEqual(p['status'],'open');self.assertEqual(p['average'],99)
+ def test_legacy_unverified_pending_canceled_not_backfilled(self):
+  p=self.plan();p['rules'].pop('conditions_fully_encoded')
+  with store.db() as c:paper.save(c,p)
+  paper.tick(180)
+  with store.db() as c:
+   self.assertEqual(paper.read_states(c)[0]['status'],'canceled')
+   self.assertEqual(c.execute("SELECT COUNT(*) FROM paper_events WHERE kind='entry'").fetchone()[0],0)
