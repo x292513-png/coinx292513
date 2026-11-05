@@ -24,7 +24,9 @@ def install(bot):
         try:cfg=json.loads((ROOT/'config/runtime.json').read_text())
         except (OSError,ValueError):return await original(update,context)
         topic=msg.message_thread_id if msg and msg.is_topic_message else None
-        if topic!=cfg['topic_id'] or update.effective_chat.id!=cfg['chat_id']:
+        topics={cfg['topic_id']}
+        if cfg.get('paper_topic_id') is not None:topics.add(cfg['paper_topic_id'])
+        if topic not in topics or update.effective_chat.id!=cfg['chat_id']:
             return await original(update,context)
         if update.effective_user.id!=cfg['allowed_user']:return
         reply=getattr(msg,'reply_to_message',None)

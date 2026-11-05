@@ -233,9 +233,23 @@ async def inbox(request):
     r=store.runtime()
     if not secrets.compare_digest(request.headers.get('X-Wave-Key',''),r['bridge_key']):raise web.HTTPForbidden()
     d=await request.json()
-    if d.get('user_id')!=r['allowed_user'] or d.get('chat_id')!=r['chat_id'] or d.get('topic_id')!=r['topic_id']:raise web.HTTPForbidden()
+    paper_topic=store.get('paper_topic_id')
+    allowed_topics={r['topic_id']}
+    if paper_topic is not None:allowed_topics.add(paper_topic)
+    if d.get('user_id')!=r['allowed_user'] or d.get('chat_id')!=r['chat_id'] or d.get('topic_id') not in allowed_topics:raise web.HTTPForbidden()
     mid=int(d['message_id']);text=str(d.get('text',''))[:6000];reply=d.get('reply_id')
     if store.get('incoming:'+str(mid)):return web.json_response({'ok':True,'duplicate':True})
+    if paper_topic is not None and d.get('topic_id')==paper_topic:
+        from .paper_queries import answer
+        response=answer(text)
+        # Claim the update and enqueue its reply in one transaction for retry safety.
+        with store.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            key='incoming:'+str(mid)
+            if c.execute('SELECT 1 FROM kv WHERE key=?',(key,)).fetchone():return web.json_response({'ok':True,'duplicate':True})
+            c.execute('INSERT INTO kv(key,value) VALUES (?,?)',(key,json.dumps(time.time())))
+            c.execute('INSERT INTO outbox(created,text,reply_id,topic_id) VALUES (?,?,?,?)',(time.time(),response,mid,paper_topic))
+        return web.json_response({'ok':True,'paper_query':True})
     store.put('incoming:'+str(mid),time.time())
     clean=text.strip();low=clean.lower();command=low.split()[0].split('@')[0] if low else ''
     stop=command in ['/stop','/pause'] or low in ['stop','스탑','중지','알림 중지']
