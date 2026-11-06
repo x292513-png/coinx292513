@@ -72,6 +72,11 @@ def status_text():
         counts=dict(c.execute('SELECT kind,COUNT(*) FROM calls WHERE started>=? GROUP BY kind',(day,)).fetchall())
         pending=c.execute("SELECT COUNT(*) FROM jobs WHERE status IN ('pending','running')").fetchone()[0]
     lines += [f"오늘 AI: 자동 {counts.get('auto',0)}/{cfg['auto_calls_per_day']} · 질문 {counts.get('manual',0)}/{cfg['manual_calls_per_day']}",f"분석 대기/진행 {pending}건",'', '분석해줘 → BTC·ETH를 지금 기준으로 새 분석 / 비트 분석해줘 / 이더 분석해줘', '/status 상태 · /report 검증 · stop 또는 스탑 중지 · start 재개']
+    lines += [f"가상매매 기회 판단: {counts.get('paper',0)}/{cfg.get('paper_calls_per_day',12)}회 · {'켜짐' if cfg.get('paper_opportunity_enabled',False) else '꺼짐'}"]
+    scan_reasons={'queued':'새 기회 분석 요청','no_new_candidate':'새 후보 없음','position_open':'보유 포지션 관리','analysis_in_progress':'분석 진행 중','paper_daily_budget':'오늘 판단 상한 도달','review_cooldown':'재판단 간격 대기'}
+    for symbol in cfg['symbols']:
+        scan=store.get('opportunity_status:'+symbol,{})
+        if scan:lines.append(f"{symbol} 기회 탐색: {scan_reasons.get(scan.get('reason'),'확인 중')} · {len(scan.get('candidates',[]))}개 후보")
     lines += [f'프로그램 하루 상한 · 종목 합산 / 실패 시도 포함 · Codex 계정 한도와 별개',f'다음 초기화: {reset_label(now)}']
     if cfg.get('notification_mode')=='twice_daily':lines += ['알림: 09:00·21:00 KST BTC·ETH 통합 브리핑 · 5분 2% / 15분 3% / 1시간 4% 급변 예외']
     elif cfg.get('notification_mode')=='hourly':lines += ['알림: 매시 정각 BTC·ETH 통합 브리핑 · 5분 2% / 15분 3% / 1시간 4% 급변 예외']

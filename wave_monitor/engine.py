@@ -130,6 +130,8 @@ async def periodic():
                 for symbol in cfg['symbols']:
                     if now-store.get('price:'+symbol,{}).get('time',0)>30:continue
                     snap,raw=snapshot(symbol);key=structural_state(snap);oldkey=store.get('structure:'+symbol)
+                    from .opportunities import consider
+                    consider(snap,raw,now)
                     store.put('structure:'+symbol,key);store.put('scan:'+symbol,now)
                     prev=store.latest(symbol);reason=None
                     price=snap['price']['price'];atr=snap['frames']['5m']['atr14']

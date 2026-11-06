@@ -212,6 +212,10 @@ def summary(now,full=False):
     if stale:lines.append('⚠ 시세 지연: 평가손익은 마지막 관측 가격 기준')
     lines+=positions or ['현재 보유 없음']
     if full:
+        reasons={'queued':'새 기회 분석 요청','no_new_candidate':'새 유효 후보 없음','position_open':'기존 포지션 관리 중','analysis_in_progress':'분석 진행 중','paper_daily_budget':'기회 판단 하루 상한 도달','review_cooldown':'같은 종목 재판단 간격 대기'}
+        for symbol in store.settings()['symbols']:
+            scan=store.get('opportunity_status:'+symbol,{})
+            if scan:lines.append(f"상시 탐색 {symbol}: {reasons.get(scan.get('reason'),scan.get('reason'))} · 후보 {len(scan.get('candidates',[]))}개")
         names={'planned':'계획 등록','armed':'진입 조건 확인','entry':'진입','add':'추가 진입','tp1':'1차 익절','tp2':'잔량 익절','stop':'손절','time_exit':'시간 만료 청산','cancel':'미체결 취소','gap_exit':'데이터 공백 후 첫 관측가 청산','gap':'데이터 공백'}
         lines+=['','최근 6시간 기록']
         for e in reversed(events):

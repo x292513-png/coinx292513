@@ -14,7 +14,7 @@ from .charts import render
 log=logging.getLogger('wave.ai')
 PAPER_PROMPT='''실행 가능한 가상계좌 계획을 함께 설계한다. 무조건 지정가 재시험이나 전체 전고점 돌파를 요구하지 않는다. 파동은 가설이고 숫자 조건은 실행 기준이다. C파 내부 하락 5파 말단 후보에서 말아 올리면 전저점 근거의 stop과 가까운 반전 기준선 회복을 사용해 따라갈 수 있다. 4파 조정 종료 후보, 초기 추진파 돌파/가속, 눌림도 비교한다. setup은 c_wave_reversal / wave4_reversal / impulse_continuation / pullback 중 채택한 근거로 정한다. 5파 고점만 살짝 갱신한 뒤 구조가 깨지는 경우를 새 3파 돌파와 혼동하지 않는다. 단순 급등락이나 사용자 의견만으로 진입하지 않고 주 가설·반대 가설·국소 확인선·구조 실패선을 명시한다. 확인선은 지금 먹으려는 파동 차수의 실제 스윙으로 선택한다.
 trade_plan.paper_execution의 모드: limit=이미 확인한 근거로 지정가 대기, close_then_limit=확정봉 조건 이후 지정가, close_then_market=새 확정봉 조건 이후 지정가 재방문 없이 다음 1분봉 시가 진입, market=이미 관측된 확정봉 조건이 충족되어 다음 관측 1분봉 시가 진입. 두 시장가 방식은 next-open 가상 체결이며 실제 시장가 주문이 아니다. confirmation_tf의 종가가 confirmation_price보다 롱은 위/숏은 아래여야 한다. 1m은 실행 보조로만 사용하고 파동 판단은 일봉/4h/1h/15m을 유지한다. market은 입력의 최신 확정봉도 조건을 만족해야 한다. 진입 시점 가격이 확인선 반대편이면 취소한다. c_wave_reversal/wave4_reversal의 시장가형은 확인봉 몸통도 진입 방향이어야 하며, 확인봉 시가가 확인선 반대편 또는 같은 가격에서 출발해 이번 종가가 진입 방향으로 회복해야 한다. 단지 확인선 위에 머무는 하락 봉은 반전 확인이 아니다. C 말단에서 작은 반등 고점 회복을 기다리는 close_then_market을 사용할 수 있으며 전체 3파 고점 돌파를 필수로 만들지 않는다.
-시장가형의 entry_preferred는 예상 체결 기준가, entry_low~entry_high는 실제 진입 허용 범위다. max_entry_deviation_pct는 기준가에서 불리한 방향 최대 이격률(0.05~2%)이며 실제 변동성과 구조를 보고 선택한다. 실제 진입가 기준 1차 목표 손익비가 1.5R 미만이거나 범위/이격 초과면 취소된다. 예상 체결가에서조차 이 조건이 안 맞으면 진입을 제안하지 않는다. 진입가는 유리한 과거 가격으로 소급하지 않고 실제 체결가로 비중을 줄여 손실예산을 지킨다. 시장가형 추가 진입은 add_enabled=false로 둔다.
+정기 브리핑 주기와 매매 기회는 별개다. paper_opportunity 입력이면 관측된 여러 후보를 비교해서 가장 유리한 실제 실행 경로를 선택한다. 다이버전스만 필수로 하지 않으며 채널·피보나치 반응, 임펄스 지속, 조정 말단, 돌파 실패 모두 대안이다. close_then_limit는 확인선 돌파 후 깊은 재방문이 필요한 이유가 있을 때만 쓰고, 즉시 진입/close_then_market의 가까운 구조 손절과 실제 손익비를 반드시 먼저 비교한다. 확인된 반전에서 전체 전고점 돌파를 자동으로 요구하지 않는다. 대기·진입 선택의 기회비용도 설명하되 미체결을 피하려고 목표나 손절을 꾸미지 않는다.\n시장가형의 entry_preferred는 예상 체결 기준가, entry_low~entry_high는 실제 진입 허용 범위다. max_entry_deviation_pct는 기준가에서 불리한 방향 최대 이격률(0.05~2%)이며 실제 변동성과 구조를 보고 선택한다. 실제 진입가 기준 1차 목표 손익비가 1.5R 미만이거나 범위/이격 초과면 취소된다. 예상 체결가에서조차 이 조건이 안 맞으면 진입을 제안하지 않는다. 진입가는 유리한 과거 가격으로 소급하지 않고 실제 체결가로 비중을 줄여 손실예산을 지킨다. 시장가형 추가 진입은 add_enabled=false로 둔다.
 cancel_price는 최초 손절보다 안쪽의 진입 전 구조 실패선(롱은 stop 이상·entry_preferred 미만, 숏은 반대), cancel_tf 확정봉이 반대편으로 마감하면 대기 주문을 취소한다. 불필요하면 null. 목표·손절과 별개이며 돌파 후 하락 전환을 방치하지 않는다. expires_hours는 미체결 만료 0.05~12시간으로, 짧은 반전/가속 기회를 12시간 묵은 주문으로 남기지 않는다. hold_hours는 진입 후 최대 보유 1~72시간이다.
 가상계좌에서 실제 채택할 청산은 고정 stop, TP1 take_pct 분할, TP2 잔량, 최대 보유시간이다. breakeven_after_tp1=true면 TP1 직후 평균가로 스탑 이동, false면 최초 stop 유지. 이 명료한 관리 방식이 합리적인 경우 해당 방식을 trade_plan 본문에도 일관되게 채택한다. 판단 근거 없이 임의 추적·추가 캔들 확인을 필수로 붙여 실행을 막지 않는다. 반대로 근거상 반드시 필요한 미구현 조건을 생략해서도 안 된다. 모든 필수 조건이 수치 규칙에 표현될 때만 conditions_fully_encoded=true; 그렇지 않으면 false/mode=disabled와 구체적 이유를 적는다. reason에 setup 근거·실제 확인·취소 기준을 적는다. 기존 지정가 추가는 최초 진입 이후 같은 confirmation_tf의 add_confirmation_price 확인 후 position_plan.add_price에서만 실행한다. 수수료·펀딩 제외 1배 가상계좌이며 실제 주문은 없다.'''
 
@@ -246,7 +246,8 @@ from .freshness import refresh_for_analysis
 def process(job):
     from .budget import day_start,notice
     cfg=store.settings();now=time.time();day=day_start(now)
-    kind=job['kind'];limit=cfg.get('news_calls_per_day',2) if kind=='news' else cfg['manual_calls_per_day' if kind=='manual' else 'auto_calls_per_day']
+    kind=job['kind'];limit=cfg.get('paper_calls_per_day',12) if kind=='paper' else cfg.get('news_calls_per_day',2) if kind=='news' else cfg['manual_calls_per_day' if kind=='manual' else 'auto_calls_per_day']
+    if kind=='paper' and (store.get('paused',False) or not cfg.get('paper_opportunity_enabled',False)):return 'canceled'
     with store.db() as c:
         calls=c.execute('SELECT COUNT(*) FROM calls WHERE kind=? AND started>=?',(kind,day)).fetchone()[0]
     if calls>=limit:
@@ -311,7 +312,7 @@ def process(job):
     with store.db() as c:
         aid=c.execute('INSERT INTO analyses(job_id,created,symbol,snapshot,result,chart,usage,latency) VALUES (?,?,?,?,?,?,?,?)',(job['id'],time.time(),job['symbol'],json.dumps(snap,ensure_ascii=False),json.dumps(result,ensure_ascii=False),str(chart),json.dumps(usage),latency)).lastrowid
         c.execute('UPDATE calls SET ok=1,usage=? WHERE id=?',(json.dumps(usage),call_id))
-    quiet_auto=job['kind']=='auto' and __import__('wave_monitor.cadence',fromlist=['enabled']).enabled()
+    quiet_auto=job['kind']=='paper' or (job['kind']=='auto' and __import__('wave_monitor.cadence',fromlist=['enabled']).enabled())
     if outdated:
         store.put('invalidated:'+str(aid),time.time())
         if not quiet_auto:store.enqueue_message(f"{job['symbol']} 분석 #{aid}: 분석 중 가격이 바뀌어 새 진입 판단을 보류합니다. 당시 차트와 판단은 검증 기록에 저장했어요.",aid,reply_id=job['reply_id'])
@@ -329,7 +330,7 @@ def main():
         store.put('worker_heartbeat',time.time())
         with store.db() as c:
             c.execute('BEGIN IMMEDIATE')
-            row=c.execute("SELECT * FROM jobs WHERE status='pending' ORDER BY CASE WHEN kind='manual' THEN 0 ELSE 1 END,created LIMIT 1").fetchone()
+            row=c.execute("SELECT * FROM jobs WHERE status='pending' ORDER BY CASE WHEN kind='manual' THEN 0 WHEN kind='paper' THEN 1 ELSE 2 END,created LIMIT 1").fetchone()
             if row:c.execute("UPDATE jobs SET status='running' WHERE id=?",(row['id'],))
         if not row:time.sleep(3);continue
         job=dict(row)
