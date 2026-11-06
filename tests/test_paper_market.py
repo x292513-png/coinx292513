@@ -45,6 +45,22 @@ class MarketTests(unittest.TestCase):
   store.save_candles('BTCUSDT','1m',[[0,100,102,100,101.5,1,59999,1]])
   p=self.register(self.analysis('market'));self.assertEqual(p['status'],'armed');self.assertEqual(p['qty'],0)
   self.runbar(p,t=120,o=102,h=103,l=101.5,c=102.5);self.assertEqual(p['status'],'open')
+ def test_inference_latency_does_not_require_second_cross(self):
+  a=self.analysis('market');a['snapshot']={'frames':{'1m':{'last_closed':{'t':0}}}}
+  store.save_candles('BTCUSDT','1m',[[0,100,102,100,101.5,1,59999,1],[60000,102,103,101.1,101.8,1,119999,1]])
+  paper.register(a,120)
+  with store.db() as c:p=paper.read_states(c)[0]
+  self.assertEqual(p['status'],'armed');self.assertEqual(p['qty'],0)
+  self.runbar(p,t=180,o=102,h=103,l=101.5,c=102.5);self.assertEqual(p['status'],'open')
+ def test_failed_or_old_observed_cross_not_reused(self):
+  a=self.analysis('market');a['snapshot']={'frames':{'1m':{'last_closed':{'t':0}}}}
+  store.save_candles('BTCUSDT','1m',[[0,100,102,100,101.5,1,59999,1],[60000,102,103,100,100.8,1,119999,1]])
+  paper.register(a,120)
+  with store.db() as c:self.assertEqual(paper.read_states(c)[0]['status'],'skipped')
+  a['id']=2
+  store.save_candles('BTCUSDT','1m',[[180000,102,103,101.1,101.8,1,239999,1]])
+  paper.register(a,240)
+  with store.db() as c:self.assertEqual(paper.read_states(c)[-1]['status'],'skipped')
  def test_market_stop_on_entry_bar(self):
   p=self.register();self.arm(p);self.runbar(p,t=180,o=102,h=121,l=94,c=100)
   self.assertEqual(p['status'],'closed')

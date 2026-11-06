@@ -97,7 +97,16 @@ def register(a,now):
         if equity<=0 or amount*factor<.01:p['reason']='공유 자금 또는 손실예산 부족';save(c,p);return
         if x['mode']=='market':
             bar=c.execute('SELECT * FROM candles WHERE symbol=? AND tf=? AND closed=1 AND close_t<=? ORDER BY t DESC LIMIT 1',(a['symbol'],x['confirmation_tf'],now*1000)).fetchone()
-            if not confirms_level(c,bar,x['confirmation_price'],1 if r['bias']=='bullish' else -1,x.get('setup') in ('c_wave_reversal','wave4_reversal')):
+            confirmation=bar
+            observed=a['snapshot'].get('frames',{}).get(x['confirmation_tf'],{}).get('last_closed')
+            if observed:
+                # The AI already observed the crossing. Do not demand a second crossing
+                # just because another candle closed while inference was running.
+                from .analysis import TF_MS
+                confirmation=c.execute('SELECT * FROM candles WHERE symbol=? AND tf=? AND t=? AND closed=1 AND close_t<=?',(a['symbol'],x['confirmation_tf'],observed['t'],now*1000)).fetchone()
+                if confirmation and now*1000-confirmation['close_t']>2*TF_MS[x['confirmation_tf']]:confirmation=None
+            sign=1 if r['bias']=='bullish' else -1
+            if not confirms_level(c,confirmation,x['confirmation_price'],sign,x.get('setup') in ('c_wave_reversal','wave4_reversal')) or not confirms_level(c,bar,x['confirmation_price'],sign):
                 p['reason']='즉시 진입의 확정봉 조건 미충족';save(c,p);return
         p.update(status='waiting' if x['mode'].startswith('close_then_') else 'armed',sign=1 if r['bias']=='bullish' else -1,limit=plan['entry_preferred'],stop=plan['stop'],tp1=plan['tp1'],tp2=plan['tp2'],take=plan['take_pct']/100,amount=amount*factor,add_amount=add*factor,add_limit=pp['add_price'] if add else 0,added=False,add_armed=None,qty=0,average=0,tp1_done=False,entry_time=None,armed_time=now if x['mode'] in ('limit','market') else None,last_t=(math.ceil(now/60)-1)*60000,expires=now+x['expires_hours']*3600,hold_hours=x['hold_hours'],rules=x,entry_low=plan.get('entry_low'),entry_high=plan.get('entry_high'))
         save(c,p);event(c,p,now,'planned',detail=x['reason'])
