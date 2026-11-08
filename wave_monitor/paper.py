@@ -20,11 +20,34 @@ CREATE TABLE IF NOT EXISTS paper_events(id INTEGER PRIMARY KEY,plan_id INTEGER,c
 def event(c,p,now,kind,price=0,qty=0,pnl=0,detail=''):
     c.execute('INSERT INTO paper_events(plan_id,created,symbol,kind,price,qty,pnl,detail) VALUES (?,?,?,?,?,?,?,?)',(p['id'],now,p['symbol'],kind,price,qty,pnl,detail))
 
-def account(c):
-    realized=c.execute('SELECT COALESCE(SUM(pnl),0) FROM paper_events').fetchone()[0]
-    return 100+realized
+def account_spec(c):
+    row=c.execute("SELECT value FROM kv WHERE key='paper_account_v2'").fetchone()
+    return json.loads(row[0]) if row else dict(initial=100,leverage=1,mode='legacy',event_floor=0,plan_floor=0)
 
-def read_states(c):return [json.loads(r['state']) for r in c.execute('SELECT state FROM paper_plans')]
+def start_usdt_account(now):
+    """One-time new forward account; preserve all legacy plans/events unchanged."""
+    with store.db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        if account_spec(c)['mode']=='isolated':return False
+        spec=dict(initial=10000,leverage=5,mode='isolated',maintenance_rate=.005,created=now,
+                  event_floor=c.execute('SELECT COALESCE(MAX(id),0) FROM paper_events').fetchone()[0],
+                  plan_floor=c.execute('SELECT COALESCE(MAX(id),0) FROM paper_plans').fetchone()[0])
+        for key,value in [('paper_account_v2',spec),('paper_started',now)]:
+            c.execute('INSERT OR REPLACE INTO kv VALUES (?,?)',(key,json.dumps(value)))
+    return True
+
+def account(c):
+    spec=account_spec(c)
+    realized=c.execute('SELECT COALESCE(SUM(pnl),0) FROM paper_events WHERE id>?',(spec['event_floor'],)).fetchone()[0]
+    return spec['initial']+realized
+
+def read_states(c):
+    return [json.loads(r['state']) for r in c.execute('SELECT state FROM paper_plans WHERE id>? ORDER BY id',(account_spec(c)['plan_floor'],))]
+
+def liquidation_price(p,entry=None):
+    entry=p['average'] if entry is None else entry
+    return entry*(1-p['sign']/p.get('leverage',1))/(1-p['sign']*p.get('maintenance_rate',0))
+
 def save(c,p):c.execute('UPDATE paper_plans SET state=? WHERE id=?',(json.dumps(p,ensure_ascii=False),p['id']))
 
 def reserve(p):
@@ -32,10 +55,10 @@ def reserve(p):
     if p['status']=='open':
         value=p['qty']*p['average'];risk=p['qty']*max(0,(p['average']-p['stop'])*p['sign'])
         if not p['added'] and not p['tp1_done']:value+=p['add_amount'];risk+=p['add_amount']*abs(p['add_limit']-p['stop'])/p['add_limit'] if p['add_amount'] else 0
-        return value,risk
+        return value/p.get("leverage",1),risk
     amount=p['amount']+p['add_amount'];risk=p['amount']*abs(p['limit']-p['stop'])/p['limit']
     if p['add_amount']:risk+=p['add_amount']*abs(p['add_limit']-p['stop'])/p['add_limit']
-    return amount,risk
+    return amount/p.get("leverage",1),risk
 
 def valid_execution(result):
     p=result.get('trade_plan',{});x=p.get('paper_execution',{})
@@ -89,11 +112,12 @@ def register(a,now):
         except (ValueError,KeyError,TypeError):valid=False;p['reason']='실행 수치 검증 실패'
         if not valid or a['snapshot'].get('stale_at_publication') or store.get('invalidated:'+str(a['id'])):
             save(c,p);return
+        spec=account_spec(c);leverage=spec['leverage']
         pp=plan['position_plan'];equity=account(c);used,risk=map(sum,zip(*(reserve(v) for v in states))) if states else (0,0)
-        amount=equity*pp['initial_units']/100;add=equity*pp['add_units']/100 if x['add_enabled'] else 0
+        amount=equity*leverage*pp['initial_units']/100;add=equity*leverage*pp['add_units']/100 if x['add_enabled'] else 0
         proposed=amount*abs(plan['entry_preferred']-plan['stop'])/plan['entry_preferred']
         if add:proposed+=add*abs(pp['add_price']-plan['stop'])/pp['add_price']
-        factor=min(1,max(0,equity-used)/max(amount+add,1e-9),max(0,equity*.01-risk)/max(proposed,1e-9))
+        factor=min(1,max(0,equity-used)*leverage/max(amount+add,1e-9),max(0,equity*.01-risk)/max(proposed,1e-9))
         if equity<=0 or amount*factor<.01:p['reason']='공유 자금 또는 손실예산 부족';save(c,p);return
         if x['mode']=='market':
             bar=c.execute('SELECT * FROM candles WHERE symbol=? AND tf=? AND closed=1 AND close_t<=? ORDER BY t DESC LIMIT 1',(a['symbol'],x['confirmation_tf'],now*1000)).fetchone()
@@ -108,7 +132,9 @@ def register(a,now):
             sign=1 if r['bias']=='bullish' else -1
             if not confirms_level(c,confirmation,x['confirmation_price'],sign,x.get('setup') in ('c_wave_reversal','wave4_reversal')) or not confirms_level(c,bar,x['confirmation_price'],sign):
                 p['reason']='즉시 진입의 확정봉 조건 미충족';save(c,p);return
-        p.update(status='waiting' if x['mode'].startswith('close_then_') else 'armed',sign=1 if r['bias']=='bullish' else -1,limit=plan['entry_preferred'],stop=plan['stop'],tp1=plan['tp1'],tp2=plan['tp2'],take=plan['take_pct']/100,amount=amount*factor,add_amount=add*factor,add_limit=pp['add_price'] if add else 0,added=False,add_armed=None,qty=0,average=0,tp1_done=False,entry_time=None,armed_time=now if x['mode'] in ('limit','market') else None,last_t=(math.ceil(now/60)-1)*60000,expires=now+x['expires_hours']*3600,hold_hours=x['hold_hours'],rules=x,entry_low=plan.get('entry_low'),entry_high=plan.get('entry_high'))
+        p.update(leverage=leverage,margin_mode=spec['mode'],maintenance_rate=spec.get('maintenance_rate',0),status='waiting' if x['mode'].startswith('close_then_') else 'armed',sign=1 if r['bias']=='bullish' else -1,limit=plan['entry_preferred'],stop=plan['stop'],tp1=plan['tp1'],tp2=plan['tp2'],take=plan['take_pct']/100,amount=amount*factor,add_amount=add*factor,add_limit=pp['add_price'] if add else 0,added=False,add_armed=None,qty=0,average=0,tp1_done=False,entry_time=None,armed_time=now if x['mode'] in ('limit','market') else None,last_t=(math.ceil(now/60)-1)*60000,expires=now+x['expires_hours']*3600,hold_hours=x['hold_hours'],rules=x,entry_low=plan.get('entry_low'),entry_high=plan.get('entry_high'))
+        if leverage>1 and (p['stop']-liquidation_price(p,p['limit']))*p['sign']<=0:
+            p['status']='skipped';p['reason']='손절이 격리 청산 추정선보다 멀어 진입 제외';save(c,p);return
         save(c,p);event(c,p,now,'planned',detail=x['reason'])
 
 def confirms_level(c,row,level,sign,reversal=False):
@@ -140,10 +166,16 @@ def market_amount(c,p,price):
     others=[s for s in read_states(c) if s.get('id')!=p['id']]
     used=sum(reserve(s)[0] for s in others);risk=sum(reserve(s)[1] for s in others)
     equity=account(c);budget=min(p['amount']*abs(p['limit']-p['stop'])/p['limit'],max(0,equity*.01-risk))
-    return min(p['amount'],max(0,equity-used),budget/(abs(price-p['stop'])/price))
+    return min(p['amount'],max(0,equity-used)*p.get('leverage',1),budget/(abs(price-p['stop'])/price))
+
+def unrealized(p,price):
+    pnl=p['qty']*(price-p['average'])*p['sign']
+    return max(pnl,-p['qty']*p['average']/p['leverage']) if p.get('margin_mode')=='isolated' else pnl
 
 def exit_qty(c,p,b,qty,price,kind,detail=''):
-    pnl=qty*(price-p['average'])*p['sign'];p['qty']=max(0,p['qty']-qty)
+    pnl=qty*(price-p['average'])*p['sign']
+    if p.get('margin_mode')=='isolated':pnl=max(pnl,-qty*p['average']/p['leverage'])
+    p['qty']=max(0,p['qty']-qty)
     event(c,p,b['close_t']/1000,kind,price,qty,pnl,detail)
     if p['qty']<1e-12:p['status']='closed'
 
@@ -165,6 +197,8 @@ def step(c,p,b):
                 p['status']='canceled';event(c,p,now,'cancel',detail='reversal_or_breakout_failed_at_open');return
             if not p['entry_low']<=price<=p['entry_high'] or deviation>p['rules']['max_entry_deviation_pct'] or reward/risk<1.5:
                 p['status']='canceled';event(c,p,now,'cancel',detail='entry_band_chase_or_rr_failed');return
+            if p.get('margin_mode')=='isolated' and (p['stop']-liquidation_price(p,price))*p['sign']<=0:
+                p['status']='canceled';event(c,p,now,'cancel',detail='stop_beyond_isolated_liquidation');return
             amount=market_amount(c,p,price)
             if amount<.01:p['status']='canceled';event(c,p,now,'cancel',detail='portfolio_risk_budget');return
             p.update(status='open',amount=amount,qty=amount/price,average=price,entry_time=b['t']/1000)
@@ -181,6 +215,8 @@ def step(c,p,b):
         if hit_stop(p,b):exit_qty(c,p,b,p['qty'],p['stop'],'stop','entry_bar_stop_first')
         return
     if p['status']!='open':return
+    if p.get('margin_mode')=='isolated' and (b['o']-liquidation_price(p))*p['sign']<=0:
+        exit_qty(c,p,b,p['qty'],b['o'],'liquidation','isolated_gap_loss_capped_at_margin');return
     added_now=False
     if p['add_amount'] and not p['added'] and not p['tp1_done'] and p['add_armed'] is not None and b['t']/1000>p['add_armed'] and (b['o']-p['stop'])*p['sign']>0:
         touched=b['l']<=p['add_limit'] if p['sign']==1 else b['h']>=p['add_limit']
@@ -206,18 +242,19 @@ def step(c,p,b):
 def summary(now,full=False):
     if not store.get('paper_started'):return '가상 매매 준비 중'
     with store.db() as c:
-        capital=account(c);states=read_states(c)
-        events=[dict(r) for r in c.execute('SELECT * FROM paper_events WHERE created>=? ORDER BY id DESC LIMIT 15',(now-21600,))]
+        capital=account(c);spec=account_spec(c);states=read_states(c)
+        events=[dict(r) for r in c.execute('SELECT * FROM paper_events WHERE created>=? AND id>? ORDER BY id DESC LIMIT 15',(now-21600,spec['event_floor']))]
     unreal=0;stale=False;positions=[]
     for p in states:
         if p.get('status')!='open':continue
         price=store.get('price:'+p['symbol'],{})
         if now-price.get('time',0)>30:stale=True
-        mark=price.get('price',p['average']);pnl=p['qty']*(mark-p['average'])*p['sign'];unreal+=pnl
-        positions.append(f"{p['symbol']} {'롱' if p['sign']==1 else '숏'} · 평균 {p['average']:,.2f} · 평가 {pnl:+.3f}유닛")
-        if full:positions.append(f"현재 스탑 {p['stop']:,.2f} · 잔량 목표 {p['tp2']:,.2f} · 투입잔액 {p['qty']*p['average']:.3f}유닛")
+        mark=price.get('price',p['average']);pnl=unrealized(p,mark);unreal+=pnl
+        positions.append(f"{p['symbol']} {'롱' if p['sign']==1 else '숏'} · 평균 {p['average']:,.2f} · 평가 {pnl:+.3f} USDT")
+        positions.append(f"수량 {p['qty']:.6f} {p['symbol'].removesuffix('USDT')} · 격리 증거금 {p['qty']*p['average']/p.get('leverage',1):,.2f} USDT")
+        if full:positions.append(f"현재 스탑 {p['stop']:,.2f} · 잔량 목표 {p['tp2']:,.2f} · 포지션 명목액 {p['qty']*p['average']:.3f} USDT")
     reserved=sum(reserve(p)[0] for p in states if p.get('status') in ACTIVE)
-    lines=['🧪 가상 매매 · 실제 주문 없음',f'총자산 {capital+unreal:.3f}유닛 / 시작 100',f'실현 {capital-100:+.3f} · 평가 {unreal:+.3f}유닛',f'미배정 {max(0,capital-reserved):.3f}유닛',f'조건 관찰 {sum(p.get("status")=="waiting" for p in states)}건 / 확인 완료·체결 대기 {sum(p.get("status")=="armed" for p in states)}건']
+    lines=['🧪 가상 매매 · 실제 주문 없음',f"{spec['leverage']}배 · {'격리 마진' if spec['mode']=='isolated' else '기존 계좌'}",f"총자산 {capital+unreal:,.2f} USDT / 시작 {spec['initial']:,.0f}",f"실현 {capital-spec['initial']:+.2f} · 평가 {unreal:+.2f} USDT",f'미배정 증거금 {max(0,capital-reserved):,.2f} USDT',f'조건 관찰 {sum(p.get("status")=="waiting" for p in states)}건 / 확인 완료·체결 대기 {sum(p.get("status")=="armed" for p in states)}건']
     if stale:lines.append('⚠ 시세 지연: 평가손익은 마지막 관측 가격 기준')
     lines+=positions or ['현재 보유 없음']
     if full:
@@ -225,19 +262,19 @@ def summary(now,full=False):
         for symbol in store.settings()['symbols']:
             scan=store.get('opportunity_status:'+symbol,{})
             if scan:lines.append(f"상시 탐색 {symbol}: {reasons.get(scan.get('reason'),scan.get('reason'))} · 후보 {len(scan.get('candidates',[]))}개")
-        names={'planned':'계획 등록','armed':'진입 조건 확인','entry':'진입','add':'추가 진입','tp1':'1차 익절','tp2':'잔량 익절','stop':'손절','time_exit':'시간 만료 청산','cancel':'미체결 취소','gap_exit':'데이터 공백 후 첫 관측가 청산','gap':'데이터 공백'}
+        names={'planned':'계획 등록','armed':'진입 조건 확인','entry':'진입','add':'추가 진입','tp1':'1차 익절','tp2':'잔량 익절','stop':'손절','time_exit':'시간 만료 청산','cancel':'미체결 취소','gap_exit':'데이터 공백 후 첫 관측가 청산','liquidation':'격리 강제청산 모형','gap':'데이터 공백'}
         lines+=['','최근 6시간 기록']
         for e in reversed(events):
             stamp=datetime.fromtimestamp(e['created'],KST).strftime('%H:%M')
-            lines.append(f"{stamp} {e['symbol']} {names.get(e['kind'],e['kind'])}"+(f" {e['price']:,.2f} · 거래금액 {e['qty']*e['price']:.3f}유닛 · 손익 {e['pnl']:+.3f}" if e['price'] else ''))
+            lines.append(f"{stamp} {e['symbol']} {names.get(e['kind'],e['kind'])}"+(f" {e['price']:,.2f} · 거래금액 {e['qty']*e['price']:.3f} USDT · 손익 {e['pnl']:+.3f}" if e['price'] else ''))
         if not events:lines.append('새 거래 없음')
         for p in states:
             if p.get('status') in ('waiting','armed'):
-                lines.extend(['',order_status(p),f"계획 금액 {p['amount']:.3f}유닛 / 손절 {p['stop']:,.2f}",f"1차 {p['tp1']:,.2f} ({p['take']*100:g}%) / 잔량 {p['tp2']:,.2f}",f"최대 보유 {p['hold_hours']:g}시간 · 조건: {p['reason']}"])
+                lines.extend(['',order_status(p),f"계획 명목액 {p['amount']:.3f} USDT / 손절 {p['stop']:,.2f}",f"1차 {p['tp1']:,.2f} ({p['take']*100:g}%) / 잔량 {p['tp2']:,.2f}",f"최대 보유 {p['hold_hours']:g}시간 · 조건: {p['reason']}"])
         for symbol in store.settings()['symbols']:
             latest=next((p for p in reversed(states) if p.get('symbol')==symbol),None)
             if latest and latest.get('status')=='skipped' and latest.get('reason')!='position_already_open':lines.extend(['',symbol+' · 미진입: '+latest.get('reason','실행 조건 없음')])
-        lines+=['','수수료·펀딩 제외 / 1배 / 1분 OHLC 가상 체결. 같은 봉 손절·목표 동시 도달은 손절 우선. 과거 유리한 체결 소급 없음.']
+        lines+=['','수수료·펀딩 제외 / 1분 OHLC 가상 체결. 격리 손실은 해당 증거금 한도. 유지증거금률 0.5% 고정 모형이며 거래소 마크가격·구간별 실제 청산과 다를 수 있음. 같은 봉 손절·목표 동시 도달은 손절 우선. 과거 유리한 체결 소급 없음.']
     return '\n'.join(lines)
 
 def order_status(p):

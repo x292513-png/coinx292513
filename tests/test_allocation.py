@@ -33,7 +33,7 @@ class AllocationTests(unittest.TestCase):
   self.assertLessEqual(r['trade_plan']['position_plan']['calculation']['full_stop_loss_units'],1)
  def test_display_explicit_timeframes_units_and_reserve(self):
   r=self.result();prepare(r);text=summary(r)
-  for value in ['4시간봉','15분봉','1시간봉','예비','손실','1배','승률 아님']:self.assertIn(value,text)
+  for value in ['4시간봉','15분봉','1시간봉','예비','손실','5배','승률 아님']:self.assertIn(value,text)
  def test_wait_and_legacy_do_not_invent_units(self):
   r=self.result();r['trade_plan']['enabled']=False;prepare(r)
   self.assertEqual(r['trade_plan']['position_plan']['initial_units'],0)

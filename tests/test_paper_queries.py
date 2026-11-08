@@ -43,7 +43,7 @@ class QueryTests(unittest.TestCase):
   store.put('price:ETHUSDT',{'price':105,'time':now});store.put('paper_heartbeat',now)
   from wave_monitor.presentation import pages
   text='\n'.join(pages(paper_queries.answer('이더 보유 포지션',now)))
-  for expected in ['100.500','+0.500','진입 시각','4h','잔량 목표','support &lt;test&gt;','금액이 미설정']:self.assertIn(expected,text)
+  for expected in ['100.50','+0.500','진입 시각','4h','잔량 목표','support &lt;test&gt;','코인 수량']:self.assertIn(expected,text)
   self.assertNotIn('0.1 ETH',text)
  def test_bridge_routes_slash_and_natural_but_preserves_other_topics(self):
   bot=SimpleNamespace(handle_text=AsyncMock());original=bot.handle_text
