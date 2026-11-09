@@ -7,6 +7,7 @@ KST=timezone(timedelta(hours=9))
 ACTIVE=('waiting','armed','open')
 MARKET_MODES=('market','close_then_market')
 CANCEL_REASONS={'structure_failure_before_entry':'진입 전 구조 실패선 이탈','reversal_or_breakout_failed_at_open':'진입 직전 반전·돌파 기준선 재이탈','entry_band_chase_or_rr_failed':'허용 가격·최대 이격 또는 1차 손익비 조건 불충족','portfolio_risk_budget':'공유 계좌의 남은 손실예산 부족','expiry_or_invalidation':'미체결 유효시간 만료 또는 손절 기준 이탈','unencoded_conditions':'필수 실행 조건 미검증','new_analysis':'새 분석 계획으로 교체','analysis_invalidated':'분석 가설 무효화','paused':'사용자 일시정지'}
+CANCEL_REASONS.update(expired='미체결 주문의 유효시간 만료',stop_invalidated='진입 전 손절 기준선 이탈',missing_1m_bars='1분봉 데이터 누락으로 체결 여부를 검증할 수 없어 취소',stop_beyond_isolated_liquidation='손절선이 격리 청산 추정선보다 멀어 진입 취소')
 
 def cancellation_reason(c,p):
     row=c.execute("SELECT detail FROM paper_events WHERE plan_id=? AND kind='cancel' ORDER BY id DESC LIMIT 1",(p['id'],)).fetchone()
@@ -19,9 +20,22 @@ CREATE TABLE IF NOT EXISTS paper_events(id INTEGER PRIMARY KEY,plan_id INTEGER,c
 
 def event(c,p,now,kind,price=0,qty=0,pnl=0,detail=''):
     c.execute('INSERT INTO paper_events(plan_id,created,symbol,kind,price,qty,pnl,detail) VALUES (?,?,?,?,?,?,?,?)',(p['id'],now,p['symbol'],kind,price,qty,pnl,detail))
-    if kind not in ('entry','add'):return
+    if kind not in ('entry','add','cancel'):return
     row=c.execute("SELECT value FROM kv WHERE key='paper_topic_id'").fetchone()
     if not row or not json.loads(row[0]):return
+    if kind=='cancel':
+        side='롱(매수)' if p['sign']==1 else '숏(매도)'
+        label='예정 기준가' if p['rules']['mode'] in MARKET_MODES else '대기 지정가'
+        reason=CANCEL_REASONS.get(detail,'가상 주문 취소: '+detail)
+        if detail=='structure_failure_before_entry' and p['rules'].get('cancel_price') is not None:
+            reason+=f" · {p['rules']['cancel_tf']} 종가 {p['rules']['cancel_price']:,.2f} {'이하' if p['sign']==1 else '이상'}"
+        if detail=='stop_invalidated':reason+=f" · {p['stop']:,.2f} USDT"
+        text=(f"🚫 <b>가상 진입 대기 취소 · {escape(p['symbol'])} {side}</b>\n"
+              f"{label} <b>{p['limit']:,.2f} USDT</b>\n"
+              f"취소 근거: {escape(reason)}\n"
+              f"{datetime.fromtimestamp(now,KST).strftime('%m/%d %H:%M:%S KST')} · 주문 #{p['id']} · 미체결")
+        c.execute('INSERT INTO outbox(created,text,topic_id) VALUES (?,?,?)',(time.time(),text,json.loads(row[0])))
+        return
     # Use the same transaction as the fill; a rollback must never announce a trade.
     title='가상 진입 체결' if kind=='entry' else '가상 추가 진입 체결'
     side='롱' if p['sign']==1 else '숏'
@@ -202,7 +216,8 @@ def step(c,p,b):
     now=b['close_t']/1000;p['last_t']=b['t']
     if p['status'] in ('waiting','armed'):
         decision_time=b['t']/1000 if p['status']=='armed' and p['rules']['mode'] in MARKET_MODES else now
-        if decision_time>p['expires'] or (p['status']=='waiting' and hit_stop(p,b)) or (b['o']-p['stop'])*p['sign']<=0:p['status']='canceled';event(c,p,now,'cancel',detail='expiry_or_invalidation');return
+        if decision_time>p['expires'] or (p['status']=='waiting' and hit_stop(p,b)) or (b['o']-p['stop'])*p['sign']<=0:
+            p['status']='canceled';event(c,p,now,'cancel',detail='expired' if decision_time>p['expires'] else 'stop_invalidated');return
         if failed_structure(c,p,b):p['status']='canceled';event(c,p,now,'cancel',detail='structure_failure_before_entry');return
         if p['status']=='waiting':
             if confirmed(c,p,b):p['status']='armed';p['armed_time']=now;event(c,p,now,'armed',detail='closed_candle_confirmation')
@@ -340,7 +355,8 @@ def tick(now):
                 b=dict(row)
                 if b['t']>p['last_t']+60000:
                     event(c,p,b['t']/1000,'gap',detail='missing_1m_bars')
-                    if p['status']!='open':p['status']='canceled';break
+                    if p['status']!='open':
+                        p['status']='canceled';event(c,p,b['t']/1000,'cancel',detail='missing_1m_bars');break
                     # No fabricated profitable path across an unknown interval: close at next observed open.
                     exit_qty(c,p,b,p['qty'],b['o'],'gap_exit','data_gap_next_open');break
                 step(c,p,b)

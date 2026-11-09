@@ -62,6 +62,27 @@ class PaperTests(unittest.TestCase):
   with store.db() as c:
    self.assertEqual(c.execute("SELECT COUNT(*) FROM paper_events WHERE kind='entry'").fetchone()[0],0)
    self.assertEqual(c.execute('SELECT COUNT(*) FROM outbox').fetchone()[0],0)
+ def test_cancel_notice_price_reason_and_no_repeat(self):
+  store.put('paper_topic_id',42);p=self.plan()
+  self.runbar(p,o=94,h=96,l=93,c=95)
+  self.runbar(p,t=180,o=94,h=96,l=93,c=95)
+  with store.db() as c:rows=c.execute('SELECT * FROM outbox').fetchall()
+  self.assertEqual(len(rows),1);self.assertEqual(rows[0]['topic_id'],42)
+  for text in ('대기 취소','BTCUSDT 롱(매수)','100.00 USDT','손절 기준선 이탈','95.00 USDT','미체결'):
+   self.assertIn(text,rows[0]['text'])
+ def test_expiry_notice_not_invalidation(self):
+  store.put('paper_topic_id',42);p=self.plan();p['expires']=100
+  self.runbar(p)
+  with store.db() as c:text=c.execute('SELECT text FROM outbox').fetchone()[0]
+  self.assertIn('유효시간 만료',text);self.assertNotIn('손절 기준선 이탈',text)
+ def test_cancel_notice_rollback(self):
+  store.put('paper_topic_id',42);p=self.plan()
+  with self.assertRaises(RuntimeError):
+   with store.db() as c:
+    paper.step(c,p,self.bar(o=94));raise RuntimeError('rollback')
+  with store.db() as c:
+   self.assertEqual(c.execute("SELECT COUNT(*) FROM paper_events WHERE kind='cancel'").fetchone()[0],0)
+   self.assertEqual(c.execute('SELECT COUNT(*) FROM outbox').fetchone()[0],0)
  def test_closed_confirmation_then_future_fill(self):
   a=self.analysis();a['result']['trade_plan']['paper_execution']['mode']='close_then_limit';paper.register(a,60)
   store.save_candles('BTCUSDT','5m',[[300000,101,104,100,103,1,599999,1]])
