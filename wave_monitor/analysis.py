@@ -145,6 +145,8 @@ def snapshot(symbol):
         rsi,atr=indicators(rows)
         pts=pivots(rows);large=pivots(rows,3)
         frames[tf]={'last_closed':rows[-1], 'rsi14':round(float(rsi[-1]),2),'atr14':round(float(atr[-1]),4),'pivots':pts[-18:],'major_pivots':large[-12:],'candidates':candidates(pts),'divergences':divergences(pts),'recent_candles':rows[-12:]}
+        from .technical_context import measure
+        frames[tf]['technical_context']=measure(rows)
         from .ict import detect
         frames[tf]['ict']=detect(rows,tf,atr,pts)
     now=time.time();price=store.get('price:'+symbol, {'price':raw['1m'][-1]['c'],'time':raw['1m'][-1]['close_t']/1000})
