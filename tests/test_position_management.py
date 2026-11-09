@@ -3,6 +3,12 @@ from test_paper import PaperTests
 from wave_monitor import paper,store,position_management as pm
 
 class ManagementTests(PaperTests):
+ def test_entry_queues_immediate_review(self):
+  store.settings()['paper_opportunity_enabled']=True
+  p=self.opened()
+  with store.db() as c:
+   rows=c.execute("SELECT reason FROM jobs WHERE symbol='BTCUSDT'").fetchall()
+  self.assertEqual([r[0] for r in rows],['paper_management'])
  def opened(self):
   p=self.plan();self.runbar(p);return p
  def decision(self,**kw):

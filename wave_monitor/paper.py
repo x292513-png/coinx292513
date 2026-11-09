@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS paper_events(id INTEGER PRIMARY KEY,plan_id INTEGER,c
 
 def event(c,p,now,kind,price=0,qty=0,pnl=0,detail=''):
     c.execute('INSERT INTO paper_events(plan_id,created,symbol,kind,price,qty,pnl,detail) VALUES (?,?,?,?,?,?,?,?)',(p['id'],now,p['symbol'],kind,price,qty,pnl,detail))
+    if kind=='entry' and store.settings().get('paper_opportunity_enabled',False):
+        if not c.execute("SELECT 1 FROM jobs WHERE symbol=? AND reason='paper_management' AND status IN ('pending','running')",(p['symbol'],)).fetchone():
+            c.execute("INSERT INTO jobs(created,symbol,reason,kind,question) VALUES (?,?,'paper_management','paper',?)",(time.time(),p['symbol'],'신규 체결 직후의 가설 및 유지·청산·추가 진입 재평가'))
     if kind not in ('entry','add','cancel'):return
     row=c.execute("SELECT value FROM kv WHERE key='paper_topic_id'").fetchone()
     if not row or not json.loads(row[0]):return

@@ -251,6 +251,9 @@ def process(job):
     cfg=store.settings();now=time.time();day=day_start(now)
     kind=job['kind'];limit=cfg.get('paper_calls_per_day',12) if kind=='paper' else cfg.get('news_calls_per_day',2) if kind=='news' else cfg['manual_calls_per_day' if kind=='manual' else 'auto_calls_per_day']
     if kind=='paper' and (store.get('paused',False) or not cfg.get('paper_opportunity_enabled',False)):return 'canceled'
+    if job.get('reason')=='paper_management':
+        from .position_management import positions
+        if not positions(job['symbol']):return 'canceled'
     with store.db() as c:
         calls=c.execute('SELECT COUNT(*) FROM calls WHERE kind=? AND started>=?',(kind,day)).fetchone()[0]
     if calls>=limit:
