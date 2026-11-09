@@ -54,6 +54,10 @@ class PaperTests(unittest.TestCase):
   self.assertEqual(len(rows),1);self.assertEqual(rows[0]['topic_id'],42)
   self.assertIn('99.00 USDT',rows[0]['text']);self.assertIn('BTCUSDT 롱',rows[0]['text'])
   self.assertIn('&lt;중앙&gt;',rows[0]['text'])
+  from wave_monitor.presentation import pages
+  rendered=pages(rows[0]['text'])[0]
+  self.assertIn('<b>',rendered);self.assertNotIn('&lt;b&gt;',rendered)
+  self.assertIn('\n\n📌',rendered);self.assertNotIn('OHLC',rendered)
  def test_fill_notification_rolls_back_with_fill(self):
   store.put('paper_topic_id',42);p=self.plan()
   with self.assertRaises(RuntimeError):
@@ -68,6 +72,9 @@ class PaperTests(unittest.TestCase):
   self.runbar(p,t=180,o=94,h=96,l=93,c=95)
   with store.db() as c:rows=c.execute('SELECT * FROM outbox').fetchall()
   self.assertEqual(len(rows),1);self.assertEqual(rows[0]['topic_id'],42)
+  from wave_monitor.presentation import pages
+  self.assertIn('<b>',pages(rows[0]['text'])[0])
+  self.assertNotIn('&lt;b&gt;',pages(rows[0]['text'])[0])
   for text in ('대기 취소','BTCUSDT 롱(매수)','100.00 USDT','손절 기준선 이탈','95.00 USDT','미체결'):
    self.assertIn(text,rows[0]['text'])
  def test_expiry_notice_not_invalidation(self):

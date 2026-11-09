@@ -3,6 +3,7 @@ import json,math,time
 from datetime import datetime,timezone,timedelta
 from html import escape
 from . import store
+from .presentation import pack
 KST=timezone(timedelta(hours=9))
 ACTIVE=('waiting','armed','open')
 MARKET_MODES=('market','close_then_market')
@@ -30,10 +31,10 @@ def event(c,p,now,kind,price=0,qty=0,pnl=0,detail=''):
         if detail=='structure_failure_before_entry' and p['rules'].get('cancel_price') is not None:
             reason+=f" · {p['rules']['cancel_tf']} 종가 {p['rules']['cancel_price']:,.2f} {'이하' if p['sign']==1 else '이상'}"
         if detail=='stop_invalidated':reason+=f" · {p['stop']:,.2f} USDT"
-        text=(f"🚫 <b>가상 진입 대기 취소 · {escape(p['symbol'])} {side}</b>\n"
-              f"{label} <b>{p['limit']:,.2f} USDT</b>\n"
-              f"취소 근거: {escape(reason)}\n"
-              f"{datetime.fromtimestamp(now,KST).strftime('%m/%d %H:%M:%S KST')} · 주문 #{p['id']} · 미체결")
+        text=pack([f"🚫 <b>가상 진입 대기 취소 · {escape(p['symbol'])} {side}</b>",
+              f"{label} <b>{p['limit']:,.2f} USDT</b>\n미체결 · 주문 취소",
+              f"📌 <b>취소 근거</b>\n{escape(reason)}",
+              datetime.fromtimestamp(now,KST).strftime('%m/%d %H:%M KST')])
         c.execute('INSERT INTO outbox(created,text,topic_id) VALUES (?,?,?)',(time.time(),text,json.loads(row[0])))
         return
     # Use the same transaction as the fill; a rollback must never announce a trade.
@@ -41,11 +42,10 @@ def event(c,p,now,kind,price=0,qty=0,pnl=0,detail=''):
     side='롱' if p['sign']==1 else '숏'
     reason=' '.join(str(p.get('reason') or '저장된 진입 조건 충족').split())
     if len(reason)>180:reason=reason[:177]+'…'
-    text=(f"✅ <b>{title} · {escape(p['symbol'])} {side}</b>\n"
-          f"체결가 <b>{price:,.2f} USDT</b> · {qty:.6g}개 · {p.get('leverage',1):g}배\n"
-          f"근거: {escape(reason)}\n"
-          f"{datetime.fromtimestamp(now,KST).strftime('%m/%d %H:%M:%S KST')} · 주문 #{p['id']}\n"
-          "1분봉 OHLC 기준 가상 체결")
+    text=pack([f"✅ <b>{title} · {escape(p['symbol'])} {side}</b>",
+          f"체결가 <b>{price:,.2f} USDT</b>\n수량 {qty:.6g}개 · 레버리지 {p.get('leverage',1):g}배",
+          f"📌 <b>진입 근거</b>\n{escape(reason)}",
+          datetime.fromtimestamp(now,KST).strftime('%m/%d %H:%M KST')])
     c.execute('INSERT INTO outbox(created,text,topic_id) VALUES (?,?,?)',(time.time(),text,json.loads(row[0])))
 
 def account_spec(c):
