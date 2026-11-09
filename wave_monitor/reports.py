@@ -73,6 +73,7 @@ def status_text():
         pending=c.execute("SELECT COUNT(*) FROM jobs WHERE status IN ('pending','running')").fetchone()[0]
     lines += [f"오늘 AI: 자동 {counts.get('auto',0)}/{cfg['auto_calls_per_day']} · 질문 {counts.get('manual',0)}/{cfg['manual_calls_per_day']}",f"분석 대기/진행 {pending}건",'', '분석해줘 → BTC·ETH를 지금 기준으로 새 분석 / 비트 분석해줘 / 이더 분석해줘', '/status 상태 · /report 검증 · stop 또는 스탑 중지 · start 재개']
     lines += [f"가상매매 기회 판단: {counts.get('paper',0)}/{cfg.get('paper_calls_per_day',12)}회 · {'켜짐' if cfg.get('paper_opportunity_enabled',False) else '꺼짐'}"]
+    if cfg.get('team_enabled'):lines.append(f"전문팀 실제 호출: {counts.get('team',0)}/{cfg.get('team_calls_per_day',84)}회 · 전체 분석 1건 = 전문가 3회 + 총괄 1회 (실패 포함)")
     scan_reasons={'queued':'새 기회 분석 요청','no_new_candidate':'새 후보 없음','position_open':'보유 포지션 관리','analysis_in_progress':'분석 진행 중','paper_daily_budget':'오늘 판단 상한 도달','review_cooldown':'재판단 간격 대기'}
     for symbol in cfg['symbols']:
         scan=store.get('opportunity_status:'+symbol,{})

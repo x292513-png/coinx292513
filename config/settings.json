@@ -63,5 +63,8 @@
   "paper_enabled": true,
   "paper_opportunity_enabled": true,
   "paper_calls_per_day": 12,
-  "paper_review_min_seconds": 900
+  "paper_review_min_seconds": 900,
+  "team_enabled": true,
+  "team_calls_per_day": 84,
+  "team_timeout_seconds": 90
 }

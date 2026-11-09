@@ -62,6 +62,9 @@ def format_analysis(r,snap,aid,reason):
             blocks+=quoted('🛡 진입 순서 · 본전 스탑 · 잔량 홀딩 — 펼쳐 보기',format_plan(r))
     frames='\n\n'.join(f"{f['tf']} · {f['count']}\n{f['evidence']}" for f in r['frames'] if f['status']!='standby')
     blocks+=quoted('🔎 시간봉별 근거 · 펼쳐 보기',frames)
+    from .team import display as team_display
+    team_text=team_display(snap.get('team_review'))
+    if team_text:blocks+=quoted('👥 전문팀 보고 · 펼쳐 보기',team_text)
     blocks+=quoted('🧩 ICT · 매물대 · 보조지표',f"FVG / OB\n{r.get('ict_comment','')}\n\n매물대\n{r['volume_comment']}\n\nRSI · 볼린저 · 스토캐스틱\n{r['rsi_comment']}")
     detail=f"대안\n{r['alternative']}\n\n지난 분석에서 달라진 점\n{r['changed_since_previous']}\n\n다음 관찰\n{r['next_watch']}"
     if len(r['thesis'])>420:detail+='\n\n전체 판단\n'+r['thesis']
