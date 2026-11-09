@@ -294,6 +294,8 @@ def process(job):
     snap['recent_dialogue']=recent_dialogue(job['symbol'],job['id'])
     from .book_rules import context as book_context
     snap['book_knowledge']=book_context(snap)
+    from .position_management import positions
+    snap['open_positions']=positions(job['symbol'])
     from .team import review
     snap['team_review']=review(compact_input(snap),job,run_codex)
     if snap['team_review']['status']=='not_run_budget_or_duplicate':return 'budget_limited'
@@ -306,6 +308,9 @@ def process(job):
             if time.time()*1000-raw[tf][-1]['close_t']>2*__import__('wave_monitor.analysis',fromlist=['TF_MS']).TF_MS[tf]:raise RuntimeError('stale_candles_after_team_'+tf)
         snap['book_knowledge']=book_context(snap)
         snap['btc_eth_relationship']=pair_context(snap['asof'])
+    if job['reason']=='paper_management':
+        from .position_management import finish
+        return finish(job,snap,run_codex)
     charts=store.ROOT/'data/charts';charts.mkdir(exist_ok=True)
     chart=charts/f"{job['symbol']}-{job['id']}.png"
     render(snap,raw,chart)

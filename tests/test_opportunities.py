@@ -41,14 +41,17 @@ class OpportunityTests(unittest.TestCase):
         self.cfg['paper_calls_per_day']=1;store.queue('BTCUSDT','paper_opportunity','paper')
         op.consider(self.snap,self.raw,self.now)
         self.assertEqual(len(self.jobs()),1);self.assertEqual(store.get('opportunity_status:ETHUSDT')['reason'],'paper_daily_budget')
-    def test_live_position_blocks_but_unfilled_limit_does_not(self):
+    def test_live_position_reviews_after_cooldown(self):
         with store.db() as c:c.execute('INSERT INTO paper_plans VALUES (1,1,?,?)',('ETHUSDT',json.dumps({'symbol':'ETHUSDT','status':'armed'})))
         op.consider(self.snap,self.raw,self.now);self.assertEqual(len(self.jobs()),1)
         with store.db() as c:
             c.execute('DELETE FROM jobs');c.execute('UPDATE paper_plans SET state=?',(json.dumps({'symbol':'ETHUSDT','status':'open'}),))
         store.put('opportunity_bar:ETHUSDT',0)
         op.consider(self.snap,self.raw,self.now+1);self.assertEqual(len(self.jobs()),0)
-        self.assertEqual(store.get('opportunity_status:ETHUSDT')['reason'],'position_open')
+        self.assertEqual(store.get('opportunity_status:ETHUSDT')['reason'],'review_cooldown')
+        store.put('opportunity_bar:ETHUSDT',0);store.put('opportunity_queued:ETHUSDT',0)
+        op.consider(self.snap,self.raw,self.now+2)
+        self.assertEqual(self.jobs()[0]['reason'],'paper_management')
     def test_old_and_developing_divergence_not_new_signal(self):
         self.raw['5m'][-1].update(c=100)
         self.snap['frames']['5m']['divergences']=[{'type':'regular_bullish','status':'developing','points':[{'t':1},{'t':2,'confirmed_at':72000000}]}]

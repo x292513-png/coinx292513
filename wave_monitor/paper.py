@@ -81,7 +81,8 @@ def save(c,p):c.execute('UPDATE paper_plans SET state=? WHERE id=?',(json.dumps(
 def reserve(p):
     if p['status'] not in ACTIVE:return 0,0
     if p['status']=='open':
-        value=p['qty']*p['average'];risk=p['qty']*max(0,(p['average']-p['stop'])*p['sign'])
+        boundary=p.get('emergency_stop',p['stop']) if p.get('stop_mode')=='close' else p['stop']
+        value=p['qty']*p['average'];risk=p['qty']*max(0,(p['average']-boundary)*p['sign'])
         if not p['added'] and not p['tp1_done']:value+=p['add_amount'];risk+=p['add_amount']*abs(p['add_limit']-p['stop'])/p['add_limit'] if p['add_amount'] else 0
         return value/p.get("leverage",1),risk
     amount=p['amount']+p['add_amount'];risk=p['amount']*abs(p['limit']-p['stop'])/p['limit']
@@ -251,6 +252,12 @@ def step(c,p,b):
     if p['status']!='open':return
     if p.get('margin_mode')=='isolated' and (b['o']-liquidation_price(p))*p['sign']<=0:
         exit_qty(c,p,b,p['qty'],b['o'],'liquidation','isolated_gap_loss_capped_at_margin');return
+    boundary=p.get('emergency_stop',p['stop']) if p.get('stop_mode')=='close' else p['stop']
+    if (b['o']-boundary)*p['sign']<=0:
+        exit_qty(c,p,b,p['qty'],b['o'],'stop','gap_through_existing_protection');return
+    from .position_management import apply,close_stop
+    apply(c,p,b)
+    if p['status']!='open':return
     added_now=False
     if p['add_amount'] and not p['added'] and not p['tp1_done'] and p['add_armed'] is not None and b['t']/1000>p['add_armed'] and (b['o']-p['stop'])*p['sign']>0:
         touched=b['l']<=p['add_limit'] if p['sign']==1 else b['h']>=p['add_limit']
@@ -258,15 +265,19 @@ def step(c,p,b):
             price=min(p['add_limit'],b['o']) if p['sign']==1 else max(p['add_limit'],b['o'])
             qty=p['add_amount']/price;p['average']=(p['average']*p['qty']+price*qty)/(p['qty']+qty);p['qty']+=qty;p['added']=True;added_now=True
             event(c,p,now,'add',price,qty,detail='conditional_limit')
-    if hit_stop(p,b):
+    if p.get('stop_mode')=='close':
+        price=close_stop(c,p,b)
+        if price is not None:
+            exit_qty(c,p,b,p['qty'],price,'stop','reviewed_structure_or_emergency');return
+    elif hit_stop(p,b):
         price=min(p['stop'],b['o']) if p['sign']==1 else max(p['stop'],b['o'])
         exit_qty(c,p,b,p['qty'],price,'stop','stop_first_if_both_targets_hit');return
     if added_now:return # no optimistic target fill on an ambiguous add bar
     if not p['tp1_done'] and hit_target(p,b,p['tp1']):
         exit_qty(c,p,b,p['qty']*p['take'],p['tp1'],'tp1');p['tp1_done']=True
-        if p['rules']['breakeven_after_tp1']:p['stop']=p['average']
+        if p['rules']['breakeven_after_tp1']:p['stop']=p['average'];p['stop_mode']='touch'
         # Do not assume path after TP1; test new break-even conservatively in same bar.
-        if hit_stop(p,b):exit_qty(c,p,b,p['qty'],p['stop'],'stop','tp1_then_breakeven_ambiguous');return
+        if p.get('stop_mode')!='close' and hit_stop(p,b):exit_qty(c,p,b,p['qty'],p['stop'],'stop','tp1_then_breakeven_ambiguous');return
     if hit_target(p,b,p['tp2']):exit_qty(c,p,b,p['qty'],p['tp2'],'tp2');return
     if now>=p['entry_time']+p['hold_hours']*3600:exit_qty(c,p,b,p['qty'],b['c'],'time_exit');return
     if p['add_amount'] and not p['added'] and not p['tp1_done']:
@@ -286,13 +297,15 @@ def summary(now,full=False):
         mark=price.get('price',p['average']);pnl=unrealized(p,mark);unreal+=pnl
         positions.append(f"{p['symbol']} {'롱' if p['sign']==1 else '숏'} · 평균 {p['average']:,.2f} · 평가 {pnl:+.3f} USDT")
         positions.append(f"수량 {p['qty']:.6f} {p['symbol'].removesuffix('USDT')} · {p.get('leverage',1)}배 · 격리 증거금 {p['qty']*p['average']/p.get('leverage',1):,.2f} USDT")
-        if full:positions.append(f"현재 스탑 {p['stop']:,.2f} · 잔량 목표 {p['tp2']:,.2f} · 포지션 명목액 {p['qty']*p['average']:.3f} USDT")
+        if full:
+            positions.append(f"현재 구조 기준 {p['stop']:,.2f} · 잔량 목표 {p['tp2']:,.2f} · 포지션 명목액 {p['qty']*p['average']:.3f} USDT")
+            if p.get('stop_mode')=='close':positions.append(f"{p['stop_tf']} 종가로 무효화 확인 · 비상 청산 {p['emergency_stop']:,.2f}")
     reserved=sum(reserve(p)[0] for p in states if p.get('status') in ACTIVE)
     lines=['🧪 가상 매매 · 실제 주문 없음',f"{str(spec['leverage'])+'배' if not spec.get('max_leverage') else '거래별 1~'+str(spec['max_leverage'])+'배'} · {'격리 마진' if spec['mode']=='isolated' else '기존 계좌'}",f"총자산 {capital+unreal:,.2f} USDT / 시작 {spec['initial']:,.0f}",f"실현 {capital-spec['initial']:+.2f} · 평가 {unreal:+.2f} USDT",f'미배정 증거금 {max(0,capital-reserved):,.2f} USDT',f'조건 관찰 {sum(p.get("status")=="waiting" for p in states)}건 / 확인 완료·체결 대기 {sum(p.get("status")=="armed" for p in states)}건']
     if stale:lines.append('⚠ 시세 지연: 평가손익은 마지막 관측 가격 기준')
     lines+=positions or ['현재 보유 없음']
     if full:
-        reasons={'queued':'새 기회 분석 요청','no_new_candidate':'새 유효 후보 없음','position_open':'기존 포지션 관리 중','analysis_in_progress':'분석 진행 중','paper_daily_budget':'기회 판단 하루 상한 도달','review_cooldown':'같은 종목 재판단 간격 대기'}
+        reasons={'queued':'새 기회 분석 요청','management_queued':'보유 포지션 전문팀 재평가 요청','no_new_candidate':'새 유효 후보 없음','position_open':'기존 포지션 관리 중','analysis_in_progress':'분석 진행 중','paper_daily_budget':'기회·포지션 판단 하루 상한 도달','review_cooldown':'같은 종목 재판단 간격 대기'}
         for symbol in store.settings()['symbols']:
             scan=store.get('opportunity_status:'+symbol,{})
             if scan:lines.append(f"상시 탐색 {symbol}: {reasons.get(scan.get('reason'),scan.get('reason'))} · 후보 {len(scan.get('candidates',[]))}개")

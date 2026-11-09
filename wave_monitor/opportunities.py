@@ -72,10 +72,15 @@ def consider(snap,raw,now):
         pending=c.execute("SELECT COUNT(*) FROM jobs WHERE symbol=? AND status IN ('pending','running')",(symbol,)).fetchone()[0]
         used=c.execute("SELECT COUNT(*) FROM calls WHERE kind='paper' AND started>=?",(day_start(now),)).fetchone()[0]
         reserved=c.execute("SELECT COUNT(*) FROM jobs WHERE kind='paper' AND status IN ('pending','running')").fetchone()[0]
-    if busy:status['reason']='position_open'
-    elif pending:status['reason']='analysis_in_progress'
+    if pending:status['reason']='analysis_in_progress'
     elif used+reserved>=cfg.get('paper_calls_per_day',12):status['reason']='paper_daily_budget'
     elif now-store.get('opportunity_queued:'+symbol,0)<cfg.get('paper_review_min_seconds',900):status['reason']='review_cooldown'
+    elif busy and (fresh or now-store.get('management_queued:'+symbol,0)>=3600):
+        jid=store.queue(symbol,'paper_management','paper','보유 포지션의 가설 유효성, 유지/축소/청산/추가 진입을 최신 차트로 재평가. '+json.dumps(fresh[:12],ensure_ascii=False))
+        status.update(reason='management_queued',job_id=jid)
+        store.put('management_queued:'+symbol,now);store.put('opportunity_queued:'+symbol,now)
+        for e in fresh:store.put('opportunity_seen:'+symbol+':'+e['key'],now)
+    elif busy:status['reason']='position_open'
     elif fresh:
         question=('상시 가상매매 기회 검토. 아래 후보는 매수/매도 지시가 아니라 측정된 변화다. '
           '서적 판단 절차와 일봉→4h→1h→15m 맥락으로 롱·숏·대기를 비교하고, 5m/15m 국소 거래도 검토하라. '

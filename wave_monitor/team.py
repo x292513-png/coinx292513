@@ -48,7 +48,8 @@ def inputs(snap,role):
     refs.update(x['id'] for x in levels)
     data=dict(symbol=snap['symbol'],asof=snap['asof'],price=snap['price'],frames=frames,
               previous_plan=(snap.get('previous') or {}).get('result',{}).get('trade_plan'),
-              execution_limits='가상계좌만. 격리 1~10배. 고정 손절/분할익절/본전스탑/TP2/최대 보유시간 실행. 전문가에게 주문 권한 없음.')
+              open_positions=snap.get('open_positions',[]),
+              execution_limits='가상계좌만. 격리 1~10배. 최초 계획은 구조 손절/분할익절/본전스탑/TP2/보유시간. open_positions가 있으면 유지/축소/청산/추가 진입 및 구조 종가 확인과 비상 청산선의 타당성을 보고. 전문가에게 주문 권한 없음.')
     if role=='wave':data['book_knowledge']=snap.get('book_knowledge',{})
     if role=='ict':data['measurements']=levels;data['profiles']=snap.get('profiles',[])
     if role=='momentum':data['btc_eth_relationship']=snap.get('btc_eth_relationship',{})
