@@ -19,6 +19,20 @@ CREATE TABLE IF NOT EXISTS paper_events(id INTEGER PRIMARY KEY,plan_id INTEGER,c
 
 def event(c,p,now,kind,price=0,qty=0,pnl=0,detail=''):
     c.execute('INSERT INTO paper_events(plan_id,created,symbol,kind,price,qty,pnl,detail) VALUES (?,?,?,?,?,?,?,?)',(p['id'],now,p['symbol'],kind,price,qty,pnl,detail))
+    if kind not in ('entry','add'):return
+    row=c.execute("SELECT value FROM kv WHERE key='paper_topic_id'").fetchone()
+    if not row or not json.loads(row[0]):return
+    # Use the same transaction as the fill; a rollback must never announce a trade.
+    title='가상 진입 체결' if kind=='entry' else '가상 추가 진입 체결'
+    side='롱' if p['sign']==1 else '숏'
+    reason=' '.join(str(p.get('reason') or '저장된 진입 조건 충족').split())
+    if len(reason)>180:reason=reason[:177]+'…'
+    text=(f"✅ <b>{title} · {escape(p['symbol'])} {side}</b>\n"
+          f"체결가 <b>{price:,.2f} USDT</b> · {qty:.6g}개 · {p.get('leverage',1):g}배\n"
+          f"근거: {escape(reason)}\n"
+          f"{datetime.fromtimestamp(now,KST).strftime('%m/%d %H:%M:%S KST')} · 주문 #{p['id']}\n"
+          "1분봉 OHLC 기준 가상 체결")
+    c.execute('INSERT INTO outbox(created,text,topic_id) VALUES (?,?,?)',(time.time(),text,json.loads(row[0])))
 
 def account_spec(c):
     row=c.execute("SELECT value FROM kv WHERE key='paper_account_v2'").fetchone()

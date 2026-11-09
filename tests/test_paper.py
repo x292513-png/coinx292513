@@ -45,6 +45,23 @@ class PaperTests(unittest.TestCase):
  def test_topic_routing(self):
   store.enqueue_message('test',topic_id=42)
   with store.db() as c:self.assertEqual(c.execute('SELECT topic_id FROM outbox').fetchone()[0],42)
+ def test_fill_notification_actual_price_once(self):
+  store.put('paper_topic_id',42);p=self.plan();p['reason']='FVG <중앙> 반전'
+  with store.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM outbox').fetchone()[0],0)
+  self.runbar(p,o=99,h=102,l=98);self.runbar(p,t=180,o=101,h=102,l=99)
+  with store.db() as c:
+   rows=c.execute('SELECT * FROM outbox').fetchall()
+  self.assertEqual(len(rows),1);self.assertEqual(rows[0]['topic_id'],42)
+  self.assertIn('99.00 USDT',rows[0]['text']);self.assertIn('BTCUSDT 롱',rows[0]['text'])
+  self.assertIn('&lt;중앙&gt;',rows[0]['text'])
+ def test_fill_notification_rolls_back_with_fill(self):
+  store.put('paper_topic_id',42);p=self.plan()
+  with self.assertRaises(RuntimeError):
+   with store.db() as c:
+    paper.step(c,p,self.bar());raise RuntimeError('rollback')
+  with store.db() as c:
+   self.assertEqual(c.execute("SELECT COUNT(*) FROM paper_events WHERE kind='entry'").fetchone()[0],0)
+   self.assertEqual(c.execute('SELECT COUNT(*) FROM outbox').fetchone()[0],0)
  def test_closed_confirmation_then_future_fill(self):
   a=self.analysis();a['result']['trade_plan']['paper_execution']['mode']='close_then_limit';paper.register(a,60)
   store.save_candles('BTCUSDT','5m',[[300000,101,104,100,103,1,599999,1]])
