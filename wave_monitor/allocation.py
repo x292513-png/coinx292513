@@ -44,8 +44,23 @@ def prepare(result):
         # Planned retracement entry only. Never add after invalidation or widen stop.
         if not (stop<a<entry if result['bias']=='bullish' else entry<a<stop):raise ValueError('add_beyond_stop_or_not_pullback')
     else:p['add_price']=None
-    p['leverage']=5
+    adaptive='leverage' in p and bool(p.get('leverage_reason'))
+    requested=p.get('leverage',5)
+    if isinstance(requested,bool) or not isinstance(requested,int) or not 1<=requested<=10:raise ValueError('invalid_leverage')
     regime,max_units,max_risk=limits(result)
+    worst=plan['entry_high'] if result['bias']=='bullish' else plan['entry_low']
+    sign=1 if result['bias']=='bullish' else -1
+    distance=(worst-plan['stop'])*sign
+    rr=(plan.get('tp1',worst)-worst)*sign/distance if distance>0 else 0
+    strong=regime=='aligned' and rr>=2 and plan.get('paper_execution',{}).get('conditions_fully_encoded') is True
+    p['requested_leverage']=requested
+    p['leverage']=requested if requested<=5 or strong else 5
+    p['leverage_gate']='상위·하위 방향 일치, 1차 손익비 2R 이상' if strong else '고배율 조건 미충족: 최대 5배'
+    if adaptive:
+        if not 0<p['risk_budget_units']<=100:raise ValueError('invalid_structural_risk_budget')
+        max_risk=p['risk_budget_units']
+        p['risk_policy']='structural'
+
     p['regime']=regime;p['risk_budget_units']=min(p['risk_budget_units'],max_risk)
     total=p['initial_units']+p['add_units']
     scale=min(1,max_units/total)
@@ -83,5 +98,9 @@ def detail(result):
         lines += [f"추가 {p['add_units']:g}% 증거금 후보 가격 {p['add_price']:,.2f}\n조건: {p['add_condition']}",f"선호 진입가와 추가 가격 모두 체결 시 평균가 {m['average_entry']:,.2f} (가격별 수량으로 계산)"]
     else:lines.append('추가 진입 없음: '+p['add_condition'])
     lines += ['추가 진입 취소: '+p['cancel_add_condition'],f"최초만 체결 후 손절 {m['initial_stop_loss_units']*100:.2f} USDT / 모두 체결 후 손절 {m['full_stop_loss_units']*100:.2f} USDT",'추가 진입은 가격 도달만으로 실행하지 않습니다. 확인 조건 충족 전 대기하며, 최초 손절을 넓히거나 손절 후 물타기하지 않습니다.','계산 가정: 초기자금 10,000 USDT, 선형 USDT 계약. 비중은 증거금 비율이며 명목액은 증거금×설정 레버리지. 왕복 수수료·슬리피지 합계 0.20%를 가정했으며 실제 비용·펀딩·급격한 체결 미끄러짐은 다를 수 있습니다. 표시 손실은 보장 상한이 아닙니다.','비중 상한은 검증된 승률 공식이 아닌 운영 규칙입니다: 네 기준봉 일치 증거금 최대 100%/위험 1%, 혼재 최대 50%/위험 0.75%, 일봉·4시간 역추세 최대 30%/위험 0.5%.']
+    if p.get('risk_policy')=='structural':
+        lines[-1]='고정 1% 손실예산을 적용하지 않습니다. 구조 손절 가격을 먼저 정하고, 이 계획에 명시한 손실예산과 증거금 범위에서 수량을 계산합니다.'
+        lines.append(f"선택 레버리지 {p['leverage']}배 / 요청 {p.get('requested_leverage',p['leverage'])}배 · {p.get('leverage_gate','')}\n근거: {p.get('leverage_reason','')}")
     lines.append('BTC·ETH는 각각 단독 진입을 가정한 계획입니다. 둘을 동시에 거래하면 같은 가상계좌 잔액과 합산 손실예산 1%을 나눠 써야 하며, 실제 보유 포지션은 이 서비스가 조회하지 않습니다.')
+    if p.get('risk_policy')=='structural':lines[-1]='BTC·ETH가 동일 가상계좌의 증거금을 공유합니다. 개별 포지션의 격리 증거금과 구조 손절 예상 손실을 별도로 표시하며 실제 거래소 주문은 없습니다.'
     return '\n\n'.join(lines)

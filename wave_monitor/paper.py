@@ -112,12 +112,16 @@ def register(a,now):
         except (ValueError,KeyError,TypeError):valid=False;p['reason']='실행 수치 검증 실패'
         if not valid or a['snapshot'].get('stale_at_publication') or store.get('invalidated:'+str(a['id'])):
             save(c,p);return
-        spec=account_spec(c);leverage=spec['leverage']
+        spec=account_spec(c);leverage=plan.get('position_plan',{}).get('leverage',spec['leverage'])
+        if isinstance(leverage,bool) or not isinstance(leverage,int) or not 1<=leverage<=spec.get('max_leverage',spec['leverage']):
+            p['reason']='계좌 허용 레버리지 초과';save(c,p);return
         pp=plan['position_plan'];equity=account(c);used,risk=map(sum,zip(*(reserve(v) for v in states))) if states else (0,0)
         amount=equity*leverage*pp['initial_units']/100;add=equity*leverage*pp['add_units']/100 if x['add_enabled'] else 0
         proposed=amount*abs(plan['entry_preferred']-plan['stop'])/plan['entry_preferred']
         if add:proposed+=add*abs(pp['add_price']-plan['stop'])/pp['add_price']
-        factor=min(1,max(0,equity-used)*leverage/max(amount+add,1e-9),max(0,equity*.01-risk)/max(proposed,1e-9))
+        structural=spec.get('risk_policy')=='structural' and pp.get('risk_policy')=='structural'
+        risk_available=equity*pp['risk_budget_units']/100 if structural else max(0,equity*.01-risk)
+        factor=min(1,max(0,equity-used)*leverage/max(amount+add,1e-9),risk_available/max(proposed,1e-9))
         if equity<=0 or amount*factor<.01:p['reason']='공유 자금 또는 손실예산 부족';save(c,p);return
         if x['mode']=='market':
             bar=c.execute('SELECT * FROM candles WHERE symbol=? AND tf=? AND closed=1 AND close_t<=? ORDER BY t DESC LIMIT 1',(a['symbol'],x['confirmation_tf'],now*1000)).fetchone()
@@ -132,7 +136,7 @@ def register(a,now):
             sign=1 if r['bias']=='bullish' else -1
             if not confirms_level(c,confirmation,x['confirmation_price'],sign,x.get('setup') in ('c_wave_reversal','wave4_reversal')) or not confirms_level(c,bar,x['confirmation_price'],sign):
                 p['reason']='즉시 진입의 확정봉 조건 미충족';save(c,p);return
-        p.update(leverage=leverage,margin_mode=spec['mode'],maintenance_rate=spec.get('maintenance_rate',0),status='waiting' if x['mode'].startswith('close_then_') else 'armed',sign=1 if r['bias']=='bullish' else -1,limit=plan['entry_preferred'],stop=plan['stop'],tp1=plan['tp1'],tp2=plan['tp2'],take=plan['take_pct']/100,amount=amount*factor,add_amount=add*factor,add_limit=pp['add_price'] if add else 0,added=False,add_armed=None,qty=0,average=0,tp1_done=False,entry_time=None,armed_time=now if x['mode'] in ('limit','market') else None,last_t=(math.ceil(now/60)-1)*60000,expires=now+x['expires_hours']*3600,hold_hours=x['hold_hours'],rules=x,entry_low=plan.get('entry_low'),entry_high=plan.get('entry_high'))
+        p.update(risk_policy='structural' if structural else 'legacy',leverage=leverage,margin_mode=spec['mode'],maintenance_rate=spec.get('maintenance_rate',0),status='waiting' if x['mode'].startswith('close_then_') else 'armed',sign=1 if r['bias']=='bullish' else -1,limit=plan['entry_preferred'],stop=plan['stop'],tp1=plan['tp1'],tp2=plan['tp2'],take=plan['take_pct']/100,amount=amount*factor,add_amount=add*factor,add_limit=pp['add_price'] if add else 0,added=False,add_armed=None,qty=0,average=0,tp1_done=False,entry_time=None,armed_time=now if x['mode'] in ('limit','market') else None,last_t=(math.ceil(now/60)-1)*60000,expires=now+x['expires_hours']*3600,hold_hours=x['hold_hours'],rules=x,entry_low=plan.get('entry_low'),entry_high=plan.get('entry_high'))
         if leverage>1 and (p['stop']-liquidation_price(p,p['limit']))*p['sign']<=0:
             p['status']='skipped';p['reason']='손절이 격리 청산 추정선보다 멀어 진입 제외';save(c,p);return
         save(c,p);event(c,p,now,'planned',detail=x['reason'])
@@ -165,7 +169,8 @@ def market_amount(c,p,price):
     """Resize for the actual simulated fill, retaining the original loss budget."""
     others=[s for s in read_states(c) if s.get('id')!=p['id']]
     used=sum(reserve(s)[0] for s in others);risk=sum(reserve(s)[1] for s in others)
-    equity=account(c);budget=min(p['amount']*abs(p['limit']-p['stop'])/p['limit'],max(0,equity*.01-risk))
+    equity=account(c);budget=p['amount']*abs(p['limit']-p['stop'])/p['limit']
+    if p.get('risk_policy')!='structural':budget=min(budget,max(0,equity*.01-risk))
     return min(p['amount'],max(0,equity-used)*p.get('leverage',1),budget/(abs(price-p['stop'])/price))
 
 def unrealized(p,price):
@@ -251,10 +256,10 @@ def summary(now,full=False):
         if now-price.get('time',0)>30:stale=True
         mark=price.get('price',p['average']);pnl=unrealized(p,mark);unreal+=pnl
         positions.append(f"{p['symbol']} {'롱' if p['sign']==1 else '숏'} · 평균 {p['average']:,.2f} · 평가 {pnl:+.3f} USDT")
-        positions.append(f"수량 {p['qty']:.6f} {p['symbol'].removesuffix('USDT')} · 격리 증거금 {p['qty']*p['average']/p.get('leverage',1):,.2f} USDT")
+        positions.append(f"수량 {p['qty']:.6f} {p['symbol'].removesuffix('USDT')} · {p.get('leverage',1)}배 · 격리 증거금 {p['qty']*p['average']/p.get('leverage',1):,.2f} USDT")
         if full:positions.append(f"현재 스탑 {p['stop']:,.2f} · 잔량 목표 {p['tp2']:,.2f} · 포지션 명목액 {p['qty']*p['average']:.3f} USDT")
     reserved=sum(reserve(p)[0] for p in states if p.get('status') in ACTIVE)
-    lines=['🧪 가상 매매 · 실제 주문 없음',f"{spec['leverage']}배 · {'격리 마진' if spec['mode']=='isolated' else '기존 계좌'}",f"총자산 {capital+unreal:,.2f} USDT / 시작 {spec['initial']:,.0f}",f"실현 {capital-spec['initial']:+.2f} · 평가 {unreal:+.2f} USDT",f'미배정 증거금 {max(0,capital-reserved):,.2f} USDT',f'조건 관찰 {sum(p.get("status")=="waiting" for p in states)}건 / 확인 완료·체결 대기 {sum(p.get("status")=="armed" for p in states)}건']
+    lines=['🧪 가상 매매 · 실제 주문 없음',f"{str(spec['leverage'])+'배' if not spec.get('max_leverage') else '거래별 1~'+str(spec['max_leverage'])+'배'} · {'격리 마진' if spec['mode']=='isolated' else '기존 계좌'}",f"총자산 {capital+unreal:,.2f} USDT / 시작 {spec['initial']:,.0f}",f"실현 {capital-spec['initial']:+.2f} · 평가 {unreal:+.2f} USDT",f'미배정 증거금 {max(0,capital-reserved):,.2f} USDT',f'조건 관찰 {sum(p.get("status")=="waiting" for p in states)}건 / 확인 완료·체결 대기 {sum(p.get("status")=="armed" for p in states)}건']
     if stale:lines.append('⚠ 시세 지연: 평가손익은 마지막 관측 가격 기준')
     lines+=positions or ['현재 보유 없음']
     if full:
