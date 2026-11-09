@@ -88,7 +88,10 @@ def review(snap,job,runner):
 def display(review):
     if not review or review.get('status')=='disabled':return ''
     if not review.get('reports'):return '이번 분석은 전문팀 호출 한도 또는 중복 방지로 총괄 단독 분석입니다.'
-    lines=[]
+    from datetime import datetime,timezone,timedelta
+    stamp=datetime.fromtimestamp(review['asof'],timezone(timedelta(hours=9))).strftime('%m/%d %H:%M:%S KST')
+    completed=sum(r['status']=='ok' for r in review['reports'])
+    lines=[f'전문가 {completed}/3명 보고 완료 · 공통 자료 {stamp}\n총괄은 보고 후 시장 자료를 다시 조회합니다.']
     for r in review['reports']:
         label=ROLES[r['role']][0]
         if r['status']!='ok':lines.append(label+': 응답 미확보 — 의견을 합의로 계산하지 않음');continue
