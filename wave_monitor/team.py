@@ -78,7 +78,9 @@ def one(role,snap,job_id,runner,timeout):
 def review(snap,job,runner):
     cfg=store.settings()
     if not cfg.get('team_enabled',False):return {'status':'disabled','reports':[]}
-    if not reserve(job['id'],time.time(),cfg.get('team_calls_per_day',84)):
+    limit=cfg.get('team_calls_per_day',84)
+    if job.get('reason','').endswith('_urgent'):limit+=3*cfg.get('paper_urgent_reserve',8)
+    if not reserve(job['id'],time.time(),limit):
         return {'status':'not_run_budget_or_duplicate','reports':[]}
     timeout=min(120,max(15,cfg.get('team_timeout_seconds',90)))
     with ThreadPoolExecutor(max_workers=2) as pool:

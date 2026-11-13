@@ -250,8 +250,9 @@ def process(job):
     from .budget import day_start,notice
     cfg=store.settings();now=time.time();day=day_start(now)
     kind=job['kind'];limit=cfg.get('paper_calls_per_day',12) if kind=='paper' else cfg.get('news_calls_per_day',2) if kind=='news' else cfg['manual_calls_per_day' if kind=='manual' else 'auto_calls_per_day']
+    if kind=='paper' and job.get('reason','').endswith('_urgent'):limit+=cfg.get('paper_urgent_reserve',8)
     if kind=='paper' and (store.get('paused',False) or not cfg.get('paper_opportunity_enabled',False)):return 'canceled'
-    if job.get('reason')=='paper_management':
+    if job.get('reason') in ('paper_management','paper_management_urgent'):
         from .position_management import positions
         if not positions(job['symbol']):return 'canceled'
     with store.db() as c:
@@ -311,7 +312,7 @@ def process(job):
             if time.time()*1000-raw[tf][-1]['close_t']>2*__import__('wave_monitor.analysis',fromlist=['TF_MS']).TF_MS[tf]:raise RuntimeError('stale_candles_after_team_'+tf)
         snap['book_knowledge']=book_context(snap)
         snap['btc_eth_relationship']=pair_context(snap['asof'])
-    if job['reason']=='paper_management':
+    if job['reason'] in ('paper_management','paper_management_urgent'):
         from .position_management import finish
         return finish(job,snap,run_codex)
     charts=store.ROOT/'data/charts';charts.mkdir(exist_ok=True)

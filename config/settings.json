@@ -66,5 +66,6 @@
   "paper_review_min_seconds": 900,
   "team_enabled": true,
   "team_calls_per_day": 240,
-  "team_timeout_seconds": 90
+  "team_timeout_seconds": 90,
+  "paper_urgent_reserve": 8
 }

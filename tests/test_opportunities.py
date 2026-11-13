@@ -48,8 +48,9 @@ class OpportunityTests(unittest.TestCase):
             c.execute('DELETE FROM jobs');c.execute('UPDATE paper_plans SET state=?',(json.dumps({'symbol':'ETHUSDT','status':'open'}),))
         store.put('opportunity_bar:ETHUSDT',0)
         op.consider(self.snap,self.raw,self.now+1);self.assertEqual(len(self.jobs()),0)
-        self.assertEqual(store.get('opportunity_status:ETHUSDT')['reason'],'review_cooldown')
+        self.assertEqual(store.get('opportunity_status:ETHUSDT')['reason'],'position_open')
         store.put('opportunity_bar:ETHUSDT',0);store.put('opportunity_queued:ETHUSDT',0)
+        store.put('opportunity_seen:ETHUSDT:displacement:5m:'+str(self.raw['5m'][-1]['t']),0)
         op.consider(self.snap,self.raw,self.now+2)
         self.assertEqual(self.jobs()[0]['reason'],'paper_management')
     def test_old_and_developing_divergence_not_new_signal(self):
@@ -77,3 +78,47 @@ class OpportunityTests(unittest.TestCase):
         with patch('wave_monitor.worker.refresh_for_analysis') as refresh:
             self.assertEqual(process(job),'budget_limited');refresh.assert_not_called()
         with store.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM outbox').fetchone()[0],0)
+
+    def test_idle_open_position_no_hourly_review(self):
+        self.raw['5m'][-1].update(c=100);self.snap['price']['price']=100
+        with store.db() as c:c.execute('INSERT INTO paper_plans VALUES (1,1,?,?)',('ETHUSDT',json.dumps({'symbol':'ETHUSDT','status':'open'})))
+        op.consider(self.snap,self.raw,self.now)
+        self.assertEqual(self.jobs(),[])
+    def test_new_wave_and_reference_inside_box_do_not_call(self):
+        self.raw['5m'][-1].update(c=100.1);self.snap['price']['price']=100.1
+        store.put('opportunity_baseline:ETHUSDT',{'price':100,'time':self.now-4000})
+        self.snap['entry_measurements']['levels']=[{'id':'fib-new','tf':'5m','kind':'retracement','price':100}]
+        self.snap['frames']['5m']['candidates']=[{'pattern':'abc','points':[{'t':99,'confirmed':True,'confirmed_at':72000000}]}]
+        op.consider(self.snap,self.raw,self.now)
+        self.assertEqual(self.jobs(),[])
+    def test_large_move_uses_reserve_once_after_normal_cap(self):
+        self.cfg['paper_calls_per_day']=1
+        with store.db() as c:c.execute("INSERT INTO calls(started,kind) VALUES (?,'paper')",(self.now,))
+        store.put('opportunity_baseline:ETHUSDT',{'price':106,'time':self.now-4000})
+        op.consider(self.snap,self.raw,self.now)
+        self.assertEqual(self.jobs()[0]['reason'],'paper_opportunity_urgent')
+        with store.db() as c:c.execute("UPDATE jobs SET status='done'")
+        op.consider(self.snap,self.raw,self.now+1)
+        self.assertEqual(len(self.jobs()),1)
+    def test_plan_cross_is_latched_during_cooldown(self):
+        self.raw['5m'][-1].update(c=100);self.snap['price']['price']=100
+        store.put('opportunity_queued:ETHUSDT',self.now-299)
+        store.put('opportunity_tick:ETHUSDT',{'price':98,'time':self.now-15})
+        with store.db() as c:c.execute('INSERT INTO paper_plans VALUES (1,1,?,?)',('ETHUSDT',json.dumps({'symbol':'ETHUSDT','status':'waiting','rules':{'confirmation_price':99}})))
+        op.consider(self.snap,self.raw,self.now);self.assertEqual(self.jobs(),[])
+        op.consider(self.snap,self.raw,self.now+2)
+        self.assertEqual(self.jobs()[0]['reason'],'paper_opportunity_urgent')
+    def test_live_rolling_drop_during_same_five_minute_bar(self):
+        self.raw['5m'][-1].update(c=100);self.snap['price']['price']=97
+        self.raw['1m']=[dict(t=72000000-60000*(6-i),close_t=72000000-60000*(5-i)-1,o=100,h=100,l=97,c=100) for i in range(6)]
+        store.put('opportunity_bar:ETHUSDT',self.raw['5m'][-1]['close_t'])
+        op.consider(self.snap,self.raw,self.now)
+        self.assertEqual(self.jobs()[0]['reason'],'paper_opportunity_urgent')
+    def test_urgent_worker_uses_reserve(self):
+        from wave_monitor.worker import process
+        import time
+        self.cfg.update(paper_calls_per_day=1)
+        with store.db() as c:c.execute("INSERT INTO calls(started,kind) VALUES (?,'paper')",(time.time(),))
+        job={'id':1,'kind':'paper','reason':'paper_opportunity_urgent','symbol':'ETHUSDT','reply_id':None}
+        with patch('wave_monitor.worker.refresh_for_analysis',side_effect=RuntimeError('reached_refresh')):
+            with self.assertRaisesRegex(RuntimeError,'reached_refresh'):process(job)
