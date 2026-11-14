@@ -58,6 +58,28 @@ class SlackRoutingTest(unittest.TestCase):
         self.assertEqual(bot.symbols_for('이더는?', history), ['ETHUSDT'])
         self.assertEqual(bot.clean_answer('<b>판단</b> **근거** <@U123>'), '*판단* *근거*')
 
+    def test_channel_chat_accepts_plain_text_and_mobile_mention(self):
+        cfg = dict(self.cfg, channel_chat=True, mention_aliases=['BMOBILE'])
+        self.assertTrue(bot.ingest(self.event(text='바쁘냐'), cfg, 'B1'))
+        self.assertTrue(bot.ingest(self.event(ts='2.0', text='<@BMOBILE> 바쁘냐'), cfg, 'B1'))
+        self.assertTrue(bot.ingest(self.event(ts='3.0', text='둘 다 <@BMOBILE> <@GROK> 어떻게 봐?'), cfg, 'B1'))
+        self.assertFalse(bot.ingest(self.event(ts='4.0', text='너는 <@GROK> 어떻게 봐?'), cfg, 'B1'))
+        self.assertFalse(bot.ingest(self.event(ts='5.0', bot_id='GROK', text='동의해'), cfg, 'B1'))
+
+    def test_channel_context_crosses_messages_but_not_channels_or_future(self):
+        bot.ingest(self.event(text='이더 15분 어때?'), self.cfg, 'B1')
+        bot.ingest(self.event(ts='2.0', text='그럼 손절은?'), self.cfg, 'B1')
+        bot.ingest(self.event(ts='3.0', text='미래 질문'), self.cfg, 'B1')
+        rows = bot.channel_context('C1', '2.0')
+        self.assertEqual([r['text'] for r in rows], ['이더 15분 어때?', '그럼 손절은?'])
+        self.assertEqual(bot.channel_context('C2', '2.0'), [])
+
+    def test_reply_has_no_thread(self):
+        client = bot.Slack(None, {})
+        client.api = AsyncMock(return_value={'ts': '2.0'})
+        asyncio.run(client.send({'channel': 'C1', 'thread': '1.0', 'ts': '1.1'}, '답변'))
+        self.assertNotIn('thread_ts', client.api.call_args.args[1])
+
     def test_chart_retry_keeps_text_and_avoids_new_ai_call(self):
         bot.ingest(self.event(), self.cfg, 'B1')
         with bot.db() as c:

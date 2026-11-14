@@ -51,12 +51,15 @@ def ingest(event, cfg, bot_id):
         c.execute('INSERT OR IGNORE INTO messages VALUES (?,?,?,?,?,?)', (channel, ts, thread, user, text, is_bot))
         if is_bot or user not in cfg['allowed_user_ids']:
             return False
-        addressed = event['type'] == 'app_mention' or f'<@{bot_id}>' in text or bool(re.match(r'^\s*(?:gpt|코덱스)(?:\s|[,님:야]|$)', text, re.I))
+        own_ids = {bot_id, *cfg.get('mention_aliases', [])}
+        addressed = event['type'] == 'app_mention' or any(f'<@{i}>' in text for i in own_ids) or bool(re.match(r'^\s*(?:gpt|지피티|코덱스)(?:\s|[,님:야]|$)', text, re.I))
         known = thread != ts and c.execute('SELECT 1 FROM threads WHERE channel=? AND thread=?', (channel, thread)).fetchone()
-        # An explicit mention of another bot is addressed to that bot, even in our thread.
-        if re.match(r'^\s*<@[A-Z0-9]+>', text) and not addressed:
+        # Connector attribution isn't a user-addressed bot mention.
+        user_text = re.split(r'\*?다음을 사용하여 보냄\*?', text)[0]
+        mentions = set(re.findall(r'<@([A-Z0-9]+)>', user_text))
+        if mentions - own_ids and not addressed:
             return False
-        if not (addressed or known):
+        if not (cfg.get('channel_chat', False) or addressed or known):
             return False
         c.execute('INSERT OR IGNORE INTO threads VALUES (?,?)', (channel, thread))
         return c.execute('INSERT OR IGNORE INTO requests(channel,ts,thread,question,created) VALUES (?,?,?,?,?)',
@@ -66,6 +69,14 @@ def ingest(event, cfg, bot_id):
 def thread_context(channel, thread):
     with db() as c:
         rows = c.execute('SELECT user,text,bot FROM messages WHERE channel=? AND thread=? ORDER BY CAST(ts AS REAL) DESC LIMIT 16', (channel, thread)).fetchall()
+    return [dict(r) for r in reversed(rows)]
+
+
+def channel_context(channel, before_ts):
+    """Keep ordinary channel conversation continuous and exclude future messages."""
+    with db() as c:
+        rows = c.execute('SELECT user,text,bot FROM messages WHERE channel=? AND CAST(ts AS REAL)<=? AND CAST(ts AS REAL)>=? ORDER BY CAST(ts AS REAL) DESC LIMIT 24',
+                         (channel, float(before_ts), float(before_ts)-7200)).fetchall()
     return [dict(r) for r in reversed(rows)]
 
 
@@ -95,10 +106,11 @@ def make_answer(job):
     from .book_rules import reading_context
     from .worker import run_codex, obj, S
     question = job['question']
-    history = thread_context(job['channel'], job['thread'])
+    history = channel_context(job['channel'], job['ts'])
     market = bool(re.search(r'비트|이더|btc|eth|파동|분석|차트|진입|손절|익절|롱|숏|가격|상승|하락|다이버|rsi|fvg|ob|반등|지지|저항|지금.*어때', question, re.I))
     # A short follow-up inherits market intent from the human thread, not from bot chatter.
-    market = market or any(not m['bot'] and re.search(r'비트|이더|차트|손절|진입|파동', m['text']) for m in history[:-1])
+    followup = bool(re.search(r'그럼|거기|그 자리|그자리|어디|얼마|목표|가능성|관점|어케|어떻게|어때', question))
+    market = market or (followup and any(not m['bot'] and re.search(r'비트|이더|차트|손절|진입|파동', m['text']) for m in history[:-1]))
     context = {'question': question, 'thread': history, 'market': [], 'now_kst': datetime.now(ZoneInfo('Asia/Seoul')).isoformat()}
     chart = None
     if market:
@@ -160,7 +172,7 @@ class Slack:
         return payload
 
     async def send(self, job, text):
-        return await self.api('chat.postMessage', {'channel': job['channel'], 'thread_ts': job['thread'], 'text': text,
+        return await self.api('chat.postMessage', {'channel': job['channel'], 'text': text,
             'unfurl_links': False, 'unfurl_media': False,
             'client_msg_id': str(uuid.uuid5(uuid.NAMESPACE_URL, 'wave-slack-' + job['channel'] + '-' + job['ts']))})
 
@@ -172,7 +184,7 @@ class Slack:
         async with self.session.post(result['upload_url'], data=data, headers={'Content-Type': 'application/octet-stream'}) as r:
             r.raise_for_status()
         await self.api('files.completeUploadExternal', {'files': [{'id': result['file_id'], 'title': '현재 차트 · 자동 측정'}],
-            'channel_id': job['channel'], 'thread_ts': job['thread']})
+            'channel_id': job['channel']})
 
 
 async def worker(slack, bot_id):
@@ -199,7 +211,7 @@ async def worker(slack, bot_id):
                 job['answer'], job['chart'] = await asyncio.to_thread(make_answer, job)
             except Exception as exc:
                 log.warning('answer_failed request=%s type=%s', job['id'], type(exc).__name__)
-                job['answer'] = '이번 질문은 분석 실행 중 오류가 나 답변을 완료하지 못했습니다. 같은 스레드에 “다시 확인해줘”라고 보내면 재시도하겠습니다.'
+                job['answer'] = '이번 질문은 분석 실행 중 오류가 나 답변을 완료하지 못했습니다. 채널에 “다시 확인해줘”라고 보내면 재시도하겠습니다.'
                 job['chart'] = None
             with db() as c:
                 c.execute('UPDATE requests SET answer=?,chart=? WHERE id=?', (job['answer'], job['chart'], job['id']))
@@ -208,7 +220,7 @@ async def worker(slack, bot_id):
                 sent = await slack.send(job, job['answer'])
                 with db() as c:
                     c.execute('UPDATE requests SET reply_ts=? WHERE id=?', (sent['ts'], job['id']))
-                    c.execute('INSERT OR IGNORE INTO messages VALUES (?,?,?,?,?,1)', (job['channel'], sent['ts'], job['thread'], bot_id, job['answer']))
+                    c.execute('INSERT OR IGNORE INTO messages VALUES (?,?,?,?,?,1)', (job['channel'], sent['ts'], sent['ts'], bot_id, job['answer']))
             if job['chart']:
                 await slack.upload(job)
             with db() as c:

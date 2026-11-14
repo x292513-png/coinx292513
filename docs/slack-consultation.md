@@ -5,9 +5,10 @@
 
 ## 동작
 
-- `@GPT Trading 이더 지금 어떻게 봐?` 또는 `GPT 이더 지금 어떻게 봐?`로 호출.
-- 답변 스레드에서는 멘션 없이 후속 질문 가능.
-- 같은 스레드의 Grok 의견은 참고 맥락. 봇 발언 자체로 GPT 호출하지 않음.
+- 사용자님의 일반 채널 메시지를 받아 채널 본문으로 답한다. 멘션·스레드 불필요.
+- 최근 2시간, 최대 24개 채널 메시지로 후속 질문의 종목·맥락을 이어간다.
+- 휴대폰에서 관측된 GPT 멘션 별칭도 인식한다. 그록만 명시적으로 부른 메시지는 건너뛴다.
+- Grok 의견은 참고 맥락. 봇 발언 자체로 GPT 호출하지 않음.
 - 최신 가격·캔들, 독서 기록, 가상계좌를 기존 모듈에서 읽는다.
 - 이 Codex 대화 세션이 그대로 이동하는 것은 아니다. 상담 기준은 `knowledge/slack-consultation.md`로 명시한다.
 - 기존 매매 주문·텔레그램 경로를 호출하지 않는다. Slack 상담에서 주문 변경 불가.
@@ -20,7 +21,7 @@
 `config/slack-runtime.json` (Git 제외, `blog:tradewave`, 0600):
 
 ```json
-{"team_id":"T0B8S5BKRJR","channel_id":"C0CHL9US751","allowed_user_ids":["U0B8E2XCPLP"],"bot_token":"REPLACE_PRIVATELY","app_token":"REPLACE_PRIVATELY"}
+{"team_id":"T0B8S5BKRJR","channel_id":"C0CHL9US751","allowed_user_ids":["U0B8E2XCPLP"],"channel_chat":true,"mention_aliases":["B0CHSDCCQLA"],"bot_token":"REPLACE_PRIVATELY","app_token":"REPLACE_PRIVATELY"}
 ```
 
 앱 토큰 범위는 `connections:write`. 봇 범위는 manifest 참조. 관리자/개인 DM/개인 사용자 토큰 권한 없음.
