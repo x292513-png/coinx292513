@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 config/runtime.json
+config/slack-runtime.json
 data/
 logs/
 backups/

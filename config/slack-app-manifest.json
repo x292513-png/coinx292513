@@ -1,0 +1,33 @@
+{
+  "display_information": {
+    "name": "GPT Trading",
+    "description": "Wave chart consultation"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "GPT Trading",
+      "always_online": true
+    }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "app_mentions:read",
+        "channels:history",
+        "chat:write",
+        "files:write"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "app_mention",
+        "message.channels"
+      ]
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}

@@ -1,0 +1,33 @@
+[Unit]
+Description=GPT trading Slack consultation (no order execution)
+Wants=network-online.target
+After=network-online.target trading-wave-monitor.service
+
+[Service]
+Type=simple
+User=blog
+Group=tradewave
+WorkingDirectory=/opt/trading-wave-monitor
+Environment=WAVE_ROOT=/opt/trading-wave-monitor
+Environment=HOME=/home/blog
+Environment=PYTHONUNBUFFERED=1
+Environment=MPLCONFIGDIR=/opt/trading-wave-monitor/data/matplotlib
+ExecStart=/opt/trading-wave-monitor/.venv/bin/python -m wave_monitor.slack_bot
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=20
+KillMode=control-group
+UMask=0007
+Nice=15
+CPUQuota=70%
+MemoryMax=1400M
+TasksMax=256
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/trading-wave-monitor/data /home/blog/.codex
+InaccessiblePaths=-/home/blog/blog -/home/blog/telegram-ops -/home/blog/email-automation -/opt/coupang-sourcing-sync
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
