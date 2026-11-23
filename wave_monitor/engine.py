@@ -115,6 +115,10 @@ async def periodic():
     while True:
         try:
             now=time.time()
+            if cfg.get('manual_analysis_only'):
+                store.put('collector_heartbeat',now)
+                await asyncio.sleep(5)
+                continue
             for symbol in cfg['symbols']:
                 p=store.get('price:'+symbol,{});prev=store.latest(symbol)
                 fresh=now-p.get('time',0)<30
@@ -256,13 +260,17 @@ async def inbox(request):
     clean=text.strip();low=clean.lower();command=low.split()[0].split('@')[0] if low else ''
     stop=command in ['/stop','/pause'] or low in ['stop','스탑','중지','알림 중지']
     start=command in ['/start','/resume'] or low in ['start','시작','알림 재개']
+    manual_only=store.settings().get('manual_analysis_only',False)
+    if manual_only and (start or stop):
+        store.enqueue_message('요청 분석 모드입니다. 종목과 질문을 보내면 전문가 3명과 총괄이 검토합니다.',reply_id=mid)
+        return web.json_response({'ok':True})
     if stop:
         store.put('paused',True)
         store.enqueue_message('하루 2회 브리핑과 급변 알림을 멈췄어요. 가격 수집과 기록은 계속됩니다. start 또는 다른 명령을 보내면 다시 시작합니다.',reply_id=mid)
     else:
         # Any interaction in this dedicated topic means the user wants monitoring active again.
-        was_paused=store.get('paused',False)
-        store.put('paused',False)
+        was_paused=not manual_only and store.get('paused',False)
+        if not manual_only:store.put('paused',False)
         from .chart_delivery import handle as handle_chart_request
         if handle_chart_request(text,reply,mid):
             return web.json_response({'ok':True,'chart_resend':True})
@@ -301,7 +309,7 @@ async def inbox(request):
                     x=c.execute('SELECT symbol FROM analyses WHERE id=?',(ref,)).fetchone()
                     if x:symbols=[x[0]]
             from .quick_reply import wants_quick,recent_symbol,answer
-            if wants_quick(text):
+            if not manual_only and wants_quick(text):
                 if not symbols:
                     recent=recent_symbol()
                     if recent:symbols=[recent]
@@ -312,7 +320,7 @@ async def inbox(request):
                     await answer(symbols[0],ref,text,mid)
                 return web.json_response({'ok':True,'quick_reply':True})
             from .focused_reply import is_full_request
-            if not is_full_request(text):
+            if not manual_only and not is_full_request(text):
                 if not symbols:
                     recent=recent_symbol()
                     if recent:symbols=[recent]
@@ -323,6 +331,12 @@ async def inbox(request):
                     for symbol in symbols:store.queue(symbol,'focused_question','manual',text,mid,ref)
                     store.enqueue_message(', '.join(symbols)+'에서 말씀하신 조건만 최신 봉으로 확인할게요.',reply_id=mid)
                 return web.json_response({'ok':True,'focused_question':True})
+            if manual_only and not symbols:
+                recent=recent_symbol()
+                if recent:symbols=[recent]
+                else:
+                    store.enqueue_message('비트와 이더 중 어느 종목을 분석할까요?',reply_id=mid)
+                    return web.json_response({'ok':True})
             if len(symbols)==1:
                 store.put('conversation_symbol',{'symbol':symbols[0],'time':time.time()})
             else:

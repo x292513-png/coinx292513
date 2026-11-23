@@ -58,14 +58,15 @@
     ]
   ],
   "sharp_alert_cooldown_seconds": 1800,
-  "news_enabled": true,
+  "news_enabled": false,
   "news_calls_per_day": 2,
-  "paper_enabled": true,
-  "paper_opportunity_enabled": true,
+  "paper_enabled": false,
+  "paper_opportunity_enabled": false,
   "paper_calls_per_day": 64,
   "paper_review_min_seconds": 900,
   "team_enabled": true,
   "team_calls_per_day": 240,
   "team_timeout_seconds": 90,
-  "paper_urgent_reserve": 8
+  "paper_urgent_reserve": 8,
+  "manual_analysis_only": true
 }

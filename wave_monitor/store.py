@@ -88,6 +88,7 @@ def latest(symbol):
 
 
 def queue(symbol, reason, kind='auto', question='', reply_id=None, analysis_ref=None):
+    if kind!='manual' and settings().get('manual_analysis_only'):return None
     with db() as c:
         c.execute('BEGIN IMMEDIATE')
         if kind=='auto' and c.execute("SELECT 1 FROM jobs WHERE symbol=? AND kind='auto' AND status IN ('pending','running')",(symbol,)).fetchone():

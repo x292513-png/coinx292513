@@ -249,6 +249,7 @@ from .freshness import refresh_for_analysis
 def process(job):
     from .budget import day_start,notice
     cfg=store.settings();now=time.time();day=day_start(now)
+    if cfg.get('manual_analysis_only') and job['kind']!='manual':return 'canceled'
     kind=job['kind'];limit=cfg.get('paper_calls_per_day',12) if kind=='paper' else cfg.get('news_calls_per_day',2) if kind=='news' else cfg['manual_calls_per_day' if kind=='manual' else 'auto_calls_per_day']
     if kind=='paper' and job.get('reason','').endswith('_urgent'):limit+=cfg.get('paper_urgent_reserve',8)
     if kind=='paper' and (store.get('paused',False) or not cfg.get('paper_opportunity_enabled',False)):return 'canceled'
