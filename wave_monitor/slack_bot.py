@@ -102,7 +102,27 @@ def clean_answer(text):
     return html.escape(text, quote=False).strip()[:11500]
 
 
+def ledger_query(text):
+    text = re.split(r'\*?다음을 사용하여 보냄\*?', text)[0]
+    text = re.sub(r'<@[A-Z0-9]+(?:\|[^>]+)?>', '', text)
+    text = re.sub(r'[\s?!.,~]+', '', text.lower())
+    text = re.sub(r'^(?:gpt(?:trading)?|지피티|코덱스)(?:야|님)?', '', text)
+    prefix = r'(?:(?:지금까지|지금|현재|누적|총|가상매매|가상|내|우리|계좌))*'
+    subject = r'(?:잔고|잔액|총자산|포지션|보유포지션|손익|수익|실현손익|평가손익)'
+    ending = r'(?:은|는|이|가|을|를)?(?:얼마|뭐|어떻게돼|있어|있나|조회|보여줘|알려줘|확인)?(?:야|냐|인가요|예요|에요|요|인지알려줘)?'
+    profit = r'얼마(?:나)?(?:벌었|벌고있|벌엇)(?:어|냐|어요|나요|지)?'
+    return text in ('/balance', '/position', '/positions') or bool(
+        re.fullmatch(prefix + '(?:' + subject + ending + '|' + profit + ')', text))
+
+
 def make_answer(job):
+    if ledger_query(job['question']):
+        from .paper import summary
+        now = time.time()
+        result = summary(now)
+        if now - store.get('paper_heartbeat', 0) > 30:
+            result += '\n⚠ 장부 갱신 지연 · 마지막 저장 상태'
+        return result + '\n수수료·펀딩 제외', None
     from .book_rules import reading_context
     from .worker import run_codex, obj, S
     question = job['question']
