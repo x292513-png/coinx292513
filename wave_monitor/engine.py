@@ -300,7 +300,8 @@ async def inbox(request):
                 with store.db() as c:
                     x=c.execute('SELECT analysis_id FROM messages WHERE message_id=?',(reply,)).fetchone()
                     if x and x[0]:ref=x[0]
-            symbols=[]
+            symbols=list(store.settings()['symbols']) if clean=='분석' else []
+            if clean=='분석':ref=None
             upper=text.upper()
             if any(x in upper for x in ['BTC','비트']):symbols.append('BTCUSDT')
             if any(x in upper for x in ['ETH','이더']):symbols.append('ETHUSDT')
